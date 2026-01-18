@@ -1,0 +1,76 @@
+import Foundation
+
+/// Errors that can occur during Outlook API operations
+enum OutlookError: Error {
+    case fetchFailed
+    case invalidResponse
+    case httpError(Int)
+}
+
+/// Service for interacting with Microsoft Graph Mail API
+/// Uses actor isolation for thread-safe API calls
+actor OutlookService {
+    private let auth: MicrosoftAuth
+
+    init(auth: MicrosoftAuth) {
+        self.auth = auth
+    }
+
+    /// Fetch flagged and high-importance emails from Outlook
+    /// - Returns: Array of unified Email models
+    func getFlaggedEmails() async throws -> [Email] {
+        let token = try await auth.acquireGraphToken()
+
+        // Build URL with filter for flagged OR high importance emails
+        var components = URLComponents(string: "https://graph.microsoft.com/v1.0/me/messages")!
+        components.queryItems = [
+            URLQueryItem(name: "$filter", value: "flag/flagStatus eq 'flagged' or importance eq 'high'"),
+            URLQueryItem(name: "$select", value: "id,subject,from,receivedDateTime,bodyPreview,importance,flag,isRead"),
+            URLQueryItem(name: "$orderby", value: "receivedDateTime desc"),
+            URLQueryItem(name: "$top", value: "50")
+        ]
+
+        var request = URLRequest(url: components.url!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw OutlookError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            throw OutlookError.httpError(httpResponse.statusCode)
+        }
+
+        let decoder = JSONDecoder()
+        let graphResponse = try decoder.decode(GraphMessagesResponse.self, from: data)
+
+        return graphResponse.value.map { message in
+            mapToEmail(message)
+        }
+    }
+
+    // MARK: - Private Methods
+
+    /// Map Microsoft Graph message to unified Email model
+    private func mapToEmail(_ message: GraphMessage) -> Email {
+        // Parse ISO 8601 date
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let receivedDate = formatter.date(from: message.receivedDateTime) ?? Date()
+
+        return Email(
+            id: message.id,
+            source: .outlook,
+            subject: message.subject ?? "(No Subject)",
+            senderName: message.from?.emailAddress.name ?? "Unknown",
+            senderEmail: message.from?.emailAddress.address ?? "",
+            receivedAt: receivedDate,
+            bodyPreview: message.bodyPreview ?? "",
+            isImportant: message.importance?.lowercased() == "high",
+            isFlagged: message.flag?.flagStatus?.lowercased() == "flagged",
+            isRead: message.isRead ?? false
+        )
+    }
+}

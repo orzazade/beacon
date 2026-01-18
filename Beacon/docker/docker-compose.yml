@@ -1,0 +1,73 @@
+###############################################################################
+# Beacon AI Infrastructure - DOCUMENTATION ONLY
+#
+# This file documents the required services for Beacon's AI features.
+# In practice, use the shared dev-stacks at ~/Projects/dev-stacks
+#
+# To use dev-stacks:
+#   cd ~/Projects/dev-stacks
+#   docker compose --profile db --profile ai up -d
+#
+# Then create Beacon database:
+#   psql -h localhost -p 5432 -U admin -d postgres -c "CREATE DATABASE beacon;"
+#   psql -h localhost -p 5432 -U admin -d beacon -f docker/init/01-init-beacon.sql
+###############################################################################
+
+version: "3.9"
+name: beacon-stack
+
+services:
+  # PostgreSQL with pgvector for embeddings storage
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: beacon-pgvector
+    environment:
+      POSTGRES_DB: ${PGVECTOR_DB:-beacon}
+      POSTGRES_USER: ${PGVECTOR_USER:-beacon}
+      POSTGRES_PASSWORD: ${PGVECTOR_PASS:-beacon_secret}
+    ports:
+      - "${PGVECTOR_PORT:-5433}:5432"  # 5433 to avoid conflict with dev-stacks
+    volumes:
+      - ./data/pgvector:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGVECTOR_USER:-beacon} -d ${PGVECTOR_DB:-beacon}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles: ["db", "all"]
+
+  # Ollama for local LLM inference
+  ollama:
+    image: ollama/ollama
+    container_name: beacon-ollama
+    ports:
+      - "${OLLAMA_PORT:-11435}:11434"  # 11435 to avoid conflict with dev-stacks
+    volumes:
+      - ./data/ollama:/root/.ollama
+    profiles: ["ai", "all"]
+
+  # Ollama model puller (runs once to download required models)
+  ollama-init:
+    image: ollama/ollama
+    container_name: beacon-ollama-init
+    depends_on:
+      - ollama
+    volumes:
+      - ./data/ollama:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for Ollama to be ready..."
+        sleep 5
+        echo "Pulling nomic-embed-text for embeddings..."
+        ollama pull nomic-embed-text
+        echo "Pulling llama3.2:3b for local LLM..."
+        ollama pull llama3.2:3b
+        echo "Models ready!"
+    profiles: ["init"]
+
+# Volumes for persistent data
+volumes:
+  pgvector_data:
+  ollama_data:
