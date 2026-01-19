@@ -5,8 +5,8 @@ import Foundation
 enum TaskSource: String, CaseIterable, Hashable {
     case azureDevOps = "Azure DevOps"
     case outlook = "Outlook"
-    case gmail = "Gmail"
     case teams = "Teams"
+    case gmail = "Gmail"
 
     /// SF Symbol name for source badge
     var icon: String {
