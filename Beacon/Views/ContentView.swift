@@ -5,6 +5,7 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var authManager: AuthManager
     @State private var showingSettings = false
+    @State private var scannerInitialized = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +32,42 @@ struct ContentView: View {
             }
         }
         .frame(width: 320, height: 450)
+        .onAppear {
+            initializeScannerIfNeeded()
+        }
+    }
+
+    /// Initialize local scanner once database is connected
+    private func initializeScannerIfNeeded() {
+        // Only initialize once
+        guard !scannerInitialized else { return }
+        guard authManager.localScanner == nil else {
+            scannerInitialized = true
+            return
+        }
+
+        Task {
+            // Check if database is connected
+            guard await AIManager.shared.isDatabaseConnected else {
+                debugLog("[ContentView] Database not connected, skipping scanner init")
+                return
+            }
+
+            scannerInitialized = true
+
+            // Initialize scanner with new DatabaseService instance
+            // (AIManager.database is private, so we create a new instance that shares the same DB)
+            authManager.initializeLocalScanner(
+                databaseService: DatabaseService(),
+                aiManager: AIManager.shared
+            )
+
+            // Trigger initial scan
+            authManager.triggerLocalScan()
+
+            // Start periodic scanning
+            authManager.startLocalScanning()
+        }
     }
 }
 
@@ -124,9 +161,27 @@ struct SettingsContentView: View {
                     if authManager.isMicrosoftSignedIn {
                         GroupBox {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Azure DevOps")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
+                                HStack {
+                                    Text("Azure DevOps")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    Spacer()
+                                    Image(systemName: "circle.fill")
+                                        .foregroundColor(authManager.isDevOpsAuthorized ? .green : .orange)
+                                        .font(.system(size: 8))
+                                    Text(authManager.isDevOpsAuthorized ? "Authorized" : "Needs auth")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                if !authManager.isDevOpsAuthorized {
+                                    Button("Authorize Azure DevOps") {
+                                        Task { await authManager.authorizeDevOps() }
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.small)
+                                    .disabled(authManager.isLoading)
+                                }
 
                                 HStack {
                                     Text("Organization:")
