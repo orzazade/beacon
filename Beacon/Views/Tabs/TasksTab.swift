@@ -1,14 +1,16 @@
 import SwiftUI
 import AppKit
 
-/// Tasks tab showing unified tasks from all sources (Azure DevOps, Outlook, Gmail)
+/// Tasks tab showing unified tasks from all sources (Azure DevOps, Outlook, Gmail, Teams)
 struct TasksTab: View {
     @StateObject private var viewModel: UnifiedTasksViewModel
+    @ObservedObject private var authManager: AuthManager
     @State private var showSnoozeSheet = false
     @State private var isPerformingAction = false
     @State private var actionError: String?
 
     init(authManager: AuthManager) {
+        self.authManager = authManager
         _viewModel = StateObject(wrappedValue: UnifiedTasksViewModel(authManager: authManager))
     }
 
@@ -84,6 +86,16 @@ struct TasksTab: View {
         }
         .task {
             await viewModel.loadAllTasks()
+        }
+        .onChange(of: authManager.isMicrosoftSignedIn) { _, isSignedIn in
+            if isSignedIn {
+                Task { await viewModel.loadAllTasks() }
+            }
+        }
+        .onChange(of: authManager.isGoogleSignedIn) { _, isSignedIn in
+            if isSignedIn {
+                Task { await viewModel.loadAllTasks() }
+            }
         }
     }
 
@@ -176,12 +188,32 @@ struct TasksTab: View {
             )
             .padding(.vertical, 8)
 
-            // Task count
+            // Task count with refresh button
             HStack {
                 Text("Showing \(viewModel.filteredTasks.count) of \(viewModel.tasks.count) items")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+
+                // Refresh button - triggers both API refresh and local scan
+                Button {
+                    Task {
+                        // Refresh API tasks
+                        await viewModel.loadAllTasks()
+                        // Also trigger local scan
+                        authManager.triggerLocalScan()
+                    }
+                } label: {
+                    if viewModel.isLoading || authManager.isLocalScanInProgress {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .disabled(viewModel.isLoading || authManager.isLocalScanInProgress)
+                .help("Refresh tasks and scan local projects")
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 4)
