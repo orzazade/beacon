@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 /// ViewModel for managing unified tasks from all sources
-/// Fetches from Azure DevOps, Outlook, and Gmail in parallel
+/// Fetches from Azure DevOps, Outlook, Gmail, and Teams in parallel
 /// Automatically persists fetched tasks to the database for AI processing
 @MainActor
 class UnifiedTasksViewModel: ObservableObject {
@@ -106,6 +106,19 @@ class UnifiedTasksViewModel: ObservableObject {
                         let emails = try await authManager.getOutlookEmails()
                         return .success(emails)
                     } catch {
+                        return .failure(error)
+                    }
+                }
+            }
+
+            // Fetch from Teams if signed in (uses same Microsoft auth)
+            if authManager.isMicrosoftSignedIn {
+                group.addTask { [authManager] in
+                    do {
+                        let messages = try await authManager.getTeamsMessages()
+                        return .success(messages.map { $0 as any UnifiedTask })
+                    } catch {
+                        print("[Tasks] Teams fetch failed: \(error)")
                         return .failure(error)
                     }
                 }
