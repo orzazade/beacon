@@ -10,7 +10,7 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header with status
-            HeaderView(appState: appState, showingSettings: $showingSettings)
+            HeaderView(appState: appState, authManager: authManager, showingSettings: $showingSettings)
 
             Divider()
 
@@ -356,6 +356,7 @@ struct TabBarButton: View {
 /// Header view with app title, notification badge, and settings button
 struct HeaderView: View {
     @ObservedObject var appState: AppState
+    @ObservedObject var authManager: AuthManager
     @Binding var showingSettings: Bool
 
     /// Contextual subtitle based on selected tab
@@ -411,6 +412,17 @@ struct HeaderView: View {
                     .background(Color.red)
                     .foregroundColor(.white)
                     .clipShape(Capsule())
+            }
+
+            // Local scan indicator
+            if authManager.isLocalScanInProgress {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                    Text("Scanning...")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
 
             // Settings button
