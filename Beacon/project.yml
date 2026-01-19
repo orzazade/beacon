@@ -18,6 +18,15 @@ packages:
   KeyboardShortcuts:
     url: https://github.com/sindresorhus/KeyboardShortcuts
     from: "2.0.0"
+  PostgresNIO:
+    url: https://github.com/vapor/postgres-nio
+    from: "1.21.0"
+  Yams:
+    url: https://github.com/jpsim/Yams
+    from: "6.0.0"
+  AsyncAlgorithms:
+    url: https://github.com/apple/swift-async-algorithms
+    from: "1.0.0"
 
 targets:
   Beacon:
@@ -27,23 +36,26 @@ targets:
       - path: App
       - path: Auth
       - path: Config
+      - path: Models
       - path: Services
       - path: Utilities
+      - path: ViewModels
       - path: Views
     dependencies:
       - package: MSAL
       - package: GoogleSignIn
       - package: KeychainAccess
       - package: KeyboardShortcuts
+      - package: PostgresNIO
+      - package: Yams
+      - package: AsyncAlgorithms
     info:
       path: Info.plist
     entitlements:
       path: Beacon.entitlements
       properties:
-        com.apple.security.app-sandbox: true
+        com.apple.security.app-sandbox: false
         com.apple.security.network.client: true
-        keychain-access-groups:
-          - $(AppIdentifierPrefix)com.microsoft.identity.universalstorage
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.scifi.beacon
