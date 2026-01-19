@@ -53,6 +53,37 @@ actor OutlookService {
 
     // MARK: - Private Methods
 
+    // MARK: - Archive Operations
+
+    /// Archive an Outlook message by moving to Archive folder
+    /// - Parameter id: The Outlook message ID to archive
+    func archiveMessage(id: String) async throws {
+        let token = try await auth.acquireGraphToken()
+
+        // Move to well-known folder "archive"
+        let url = URL(string: "https://graph.microsoft.com/v1.0/me/messages/\(id)/move")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Move to Archive folder using well-known folder name
+        let body = ["destinationId": "archive"]
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw OutlookError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw OutlookError.httpError(httpResponse.statusCode)
+        }
+    }
+
+    // MARK: - Private Methods
+
     /// Map Microsoft Graph message to unified Email model
     private func mapToEmail(_ message: GraphMessage) -> Email {
         // Parse ISO 8601 date
