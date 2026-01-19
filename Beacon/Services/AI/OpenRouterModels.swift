@@ -48,38 +48,89 @@ struct ResponseFormat: Codable {
 struct JSONSchemaConfig: Codable {
     let name: String
     let strict: Bool
-    let schema: JSONSchemaDefinition
+    let schema: [String: AnyCodableValue]
 }
 
-/// JSON Schema definition (simplified for priority analysis)
-struct JSONSchemaDefinition: Codable {
-    let type: String
-    let properties: [String: JSONSchemaProperty]?
-    let required: [String]?
-    let items: JSONSchemaProperty?
-    let additionalProperties: Bool?
+/// Type-erased Codable value for JSON Schema (avoids recursive struct issue)
+enum AnyCodableValue: Codable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case array([AnyCodableValue])
+    case dictionary([String: AnyCodableValue])
+    case null
 
-    enum CodingKeys: String, CodingKey {
-        case type, properties, required, items
-        case additionalProperties = "additionalProperties"
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .int(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .double(value)
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode([AnyCodableValue].self) {
+            self = .array(value)
+        } else if let value = try? container.decode([String: AnyCodableValue].self) {
+            self = .dictionary(value)
+        } else if container.decodeNil() {
+            self = .null
+        } else {
+            throw DecodingError.typeMismatch(AnyCodableValue.self, DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Unsupported type"))
+        }
     }
-}
 
-/// Individual property in JSON Schema
-struct JSONSchemaProperty: Codable {
-    let type: String?
-    let description: String?
-    let enumValues: [String]?
-    let items: JSONSchemaProperty?
-    let properties: [String: JSONSchemaProperty]?
-    let required: [String]?
-    let minimum: Double?
-    let maximum: Double?
-
-    enum CodingKeys: String, CodingKey {
-        case type, description, items, properties, required, minimum, maximum
-        case enumValues = "enum"
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try container.encode(value)
+        case .int(let value): try container.encode(value)
+        case .double(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .dictionary(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
     }
+
+    /// Convenience initializers for building schemas
+    static func object(properties: [String: AnyCodableValue], required: [String]? = nil, additionalProperties: Bool = false) -> AnyCodableValue {
+        var dict: [String: AnyCodableValue] = [
+            "type": .string("object"),
+            "properties": .dictionary(properties),
+            "additionalProperties": .bool(additionalProperties)
+        ]
+        if let required = required {
+            dict["required"] = .array(required.map { .string($0) })
+        }
+        return .dictionary(dict)
+    }
+
+    static func arrayOf(_ items: AnyCodableValue) -> AnyCodableValue {
+        .dictionary([
+            "type": .string("array"),
+            "items": items
+        ])
+    }
+
+    static func stringEnum(_ values: [String]) -> AnyCodableValue {
+        .dictionary([
+            "type": .string("string"),
+            "enum": .array(values.map { .string($0) })
+        ])
+    }
+
+    static func number(minimum: Double? = nil, maximum: Double? = nil) -> AnyCodableValue {
+        var dict: [String: AnyCodableValue] = ["type": .string("number")]
+        if let min = minimum { dict["minimum"] = .double(min) }
+        if let max = maximum { dict["maximum"] = .double(max) }
+        return .dictionary(dict)
+    }
+
+    static var stringType: AnyCodableValue { .dictionary(["type": .string("string")]) }
+    static var integerType: AnyCodableValue { .dictionary(["type": .string("integer")]) }
 }
 
 struct OpenRouterMessage: Codable {

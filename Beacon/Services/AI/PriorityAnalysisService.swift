@@ -185,129 +185,38 @@ actor PriorityAnalysisService {
     }
 
     /// Build JSON Schema for priority analysis response
-    private func buildPriorityAnalysisSchema() -> JSONSchemaDefinition {
-        let signalSchema = JSONSchemaProperty(
-            type: "object",
-            description: nil,
-            enumValues: nil,
-            items: nil,
+    private func buildPriorityAnalysisSchema() -> [String: AnyCodableValue] {
+        // Signal object schema
+        let signalSchema: AnyCodableValue = .object(
             properties: [
-                "type": JSONSchemaProperty(
-                    type: "string",
-                    description: nil,
-                    enumValues: ["deadline", "vipSender", "urgencyKeyword", "actionRequired", "ageEscalation", "ambiguous"],
-                    items: nil,
-                    properties: nil,
-                    required: nil,
-                    minimum: nil,
-                    maximum: nil
-                ),
-                "weight": JSONSchemaProperty(
-                    type: "number",
-                    description: nil,
-                    enumValues: nil,
-                    items: nil,
-                    properties: nil,
-                    required: nil,
-                    minimum: 0,
-                    maximum: 1
-                ),
-                "description": JSONSchemaProperty(
-                    type: "string",
-                    description: nil,
-                    enumValues: nil,
-                    items: nil,
-                    properties: nil,
-                    required: nil,
-                    minimum: nil,
-                    maximum: nil
-                )
+                "type": .stringEnum(["deadline", "vipSender", "urgencyKeyword", "actionRequired", "ageEscalation", "ambiguous"]),
+                "weight": .number(minimum: 0, maximum: 1),
+                "description": .stringType
             ],
-            required: ["type", "weight", "description"],
-            minimum: nil,
-            maximum: nil
+            required: ["type", "weight", "description"]
         )
 
-        let analysisSchema = JSONSchemaProperty(
-            type: "object",
-            description: nil,
-            enumValues: nil,
-            items: nil,
+        // Analysis object schema
+        let analysisSchema: AnyCodableValue = .object(
             properties: [
-                "item_index": JSONSchemaProperty(
-                    type: "integer",
-                    description: nil,
-                    enumValues: nil,
-                    items: nil,
-                    properties: nil,
-                    required: nil,
-                    minimum: 0,
-                    maximum: nil
-                ),
-                "level": JSONSchemaProperty(
-                    type: "string",
-                    description: nil,
-                    enumValues: ["P0", "P1", "P2", "P3", "P4"],
-                    items: nil,
-                    properties: nil,
-                    required: nil,
-                    minimum: nil,
-                    maximum: nil
-                ),
-                "confidence": JSONSchemaProperty(
-                    type: "number",
-                    description: nil,
-                    enumValues: nil,
-                    items: nil,
-                    properties: nil,
-                    required: nil,
-                    minimum: 0,
-                    maximum: 1
-                ),
-                "reasoning": JSONSchemaProperty(
-                    type: "string",
-                    description: nil,
-                    enumValues: nil,
-                    items: nil,
-                    properties: nil,
-                    required: nil,
-                    minimum: nil,
-                    maximum: nil
-                ),
-                "signals": JSONSchemaProperty(
-                    type: "array",
-                    description: nil,
-                    enumValues: nil,
-                    items: signalSchema,
-                    properties: nil,
-                    required: nil,
-                    minimum: nil,
-                    maximum: nil
-                )
+                "item_index": .integerType,
+                "level": .stringEnum(["P0", "P1", "P2", "P3", "P4"]),
+                "confidence": .number(minimum: 0, maximum: 1),
+                "reasoning": .stringType,
+                "signals": .arrayOf(signalSchema)
             ],
-            required: ["item_index", "level", "confidence", "reasoning", "signals"],
-            minimum: nil,
-            maximum: nil
+            required: ["item_index", "level", "confidence", "reasoning", "signals"]
         )
 
-        return JSONSchemaDefinition(
-            type: "object",
-            properties: [
-                "analyses": JSONSchemaProperty(
-                    type: "array",
-                    description: nil,
-                    enumValues: nil,
-                    items: analysisSchema,
-                    properties: nil,
-                    required: nil,
-                    minimum: nil,
-                    maximum: nil
-                )
-            ],
-            required: ["analyses"],
-            items: nil,
-            additionalProperties: false
-        )
+        // Root schema
+        return [
+            "type": .string("object"),
+            "properties": .dictionary([
+                "analyses": .arrayOf(analysisSchema)
+            ]),
+            "required": .array([.string("analyses")]),
+            "additionalProperties": .bool(false)
+        ]
     }
 
     // MARK: - Response Parsing

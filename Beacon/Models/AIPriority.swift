@@ -203,20 +203,18 @@ struct PriorityCostTracker {
     }
 }
 
-// MARK: - Age Escalation
+// MARK: - Age Escalation Helper
 
-extension BeaconItem {
-    /// Calculate priority boost based on item age (from research)
-    /// Items older than 2 days get increasing priority
-    /// Formula: min(log2(days) * 0.05, 0.30)
-    var ageEscalationBoost: Float {
-        let days = Calendar.current.dateComponents([.day], from: createdAt, to: Date()).day ?? 0
+/// Calculate age escalation boost for a given date (from research)
+/// Items older than 2 days get increasing priority
+/// Formula: min(log2(days) * 0.05, 0.30)
+func calculateAgeEscalationBoost(from createdAt: Date, to currentDate: Date = Date()) -> Float {
+    let days = Calendar.current.dateComponents([.day], from: createdAt, to: currentDate).day ?? 0
 
-        // No boost for items < 2 days old
-        guard days >= 2 else { return 0 }
+    // No boost for items < 2 days old
+    guard days >= 2 else { return 0 }
 
-        // Logarithmic growth capped at 0.30
-        // 2 days = 0.05, 7 days = 0.14, 14 days = 0.19, 30 days = 0.25
-        return min(Float(log2(Double(days))) * 0.05, 0.30)
-    }
+    // Logarithmic growth capped at 0.30
+    // 2 days = 0.05, 7 days = 0.14, 14 days = 0.19, 30 days = 0.25
+    return min(Float(log2(Double(days))) * 0.05, 0.30)
 }

@@ -371,4 +371,11 @@ extension BeaconItem {
     var daysSinceCreated: Int {
         Calendar.current.dateComponents([.day], from: createdAt, to: Date()).day ?? 0
     }
+
+    /// Calculate priority boost based on item age (from research)
+    /// Items older than 2 days get increasing priority
+    /// Formula: min(log2(days) * 0.05, 0.30)
+    var ageEscalationBoost: Float {
+        calculateAgeEscalationBoost(from: createdAt)
+    }
 }
