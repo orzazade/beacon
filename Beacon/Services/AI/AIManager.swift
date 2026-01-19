@@ -357,4 +357,54 @@ class AIManager: ObservableObject {
     func removeSnooze(taskId: String, source: String) async throws {
         try await database.removeSnooze(taskId: taskId, source: source)
     }
+
+    // MARK: - Local Scanner Support
+
+    /// Get items from local scanner by type
+    /// - Parameters:
+    ///   - itemType: Optional filter by item type (gsd_file, gsd_phase_file, commit)
+    ///   - limit: Maximum items to return
+    /// - Returns: Array of BeaconItems from local source
+    func getLocalItems(itemType: String? = nil, limit: Int = 100) async throws -> [BeaconItem] {
+        try await database.getItems(source: "local", itemType: itemType, limit: limit)
+    }
+
+    /// Search for items related to a ticket ID
+    /// - Parameters:
+    ///   - ticketId: The ticket ID to search for (e.g., "AB#1234")
+    ///   - limit: Maximum results to return
+    /// - Returns: Array of search results with similarity scores
+    func searchByTicketId(_ ticketId: String, limit: Int = 20) async throws -> [SearchResult] {
+        // Use vector search with ticket context
+        let query = "Work related to ticket \(ticketId)"
+        return try await searchSimilar(query: query, limit: limit, threshold: 0.6)
+    }
+
+    /// Get commits related to a specific ticket
+    /// - Parameter ticketId: The ticket ID (e.g., "AB#1234" or just "1234")
+    /// - Returns: Array of BeaconItems representing commits
+    func getCommitsForTicket(_ ticketId: String) async throws -> [BeaconItem] {
+        // Normalize ticket ID (handle both "AB#1234" and "1234")
+        let normalizedId = ticketId.uppercased()
+
+        let allCommits = try await database.getItems(source: "local", itemType: "commit", limit: 500)
+
+        return allCommits.filter { item in
+            guard let ticketIds = item.metadata?["ticket_ids"] else { return false }
+            return ticketIds.contains(normalizedId)
+        }
+    }
+
+    /// Get GSD files for a specific project
+    /// - Parameter projectName: Name of the project
+    /// - Returns: Array of BeaconItems representing GSD files
+    func getGSDFilesForProject(_ projectName: String) async throws -> [BeaconItem] {
+        let allGSD = try await database.getItems(source: "local", itemType: nil, limit: 500)
+
+        return allGSD.filter { item in
+            guard item.source == "local" else { return false }
+            guard item.itemType == "gsd_file" || item.itemType == "gsd_phase_file" else { return false }
+            return item.metadata?["project"] == projectName
+        }
+    }
 }
