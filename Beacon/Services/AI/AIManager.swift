@@ -340,4 +340,21 @@ class AIManager: ObservableObject {
     func getPendingEmbeddingCount() async throws -> Int {
         try await database.getPendingEmbeddingCount()
     }
+
+    // MARK: - Snooze Operations
+
+    /// Store a snoozed task
+    func storeSnooze(_ snooze: SnoozedTask) async throws {
+        try await database.storeSnooze(snooze)
+    }
+
+    /// Get active snoozed task IDs
+    func getActiveSnoozedTaskIds() async throws -> Set<String> {
+        try await database.getActiveSnoozedTaskIds()
+    }
+
+    /// Remove a snooze
+    func removeSnooze(taskId: String, source: String) async throws {
+        try await database.removeSnooze(taskId: taskId, source: source)
+    }
 }
