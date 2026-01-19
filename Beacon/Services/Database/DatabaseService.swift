@@ -469,6 +469,91 @@ actor DatabaseService {
         _ = try await client.query(PostgresQuery(unsafeSQL: "DELETE FROM snoozed_tasks WHERE snooze_until <= NOW()"))
     }
 
+    // MARK: - Local Scanner Support
+
+    /// Mark items as inactive that are no longer present in scanned paths
+    /// This handles projects that have been deleted or excluded
+    /// - Parameters:
+    ///   - source: The source type to filter (e.g., "local")
+    ///   - notInPaths: Set of currently valid project paths
+    func markItemsInactive(source: String, notInPaths: Set<String>) async throws {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        // If no paths provided, nothing to mark inactive
+        guard !notInPaths.isEmpty else { return }
+
+        let escapedSource = source.replacingOccurrences(of: "'", with: "''")
+
+        // Build list of valid project names from paths
+        let validProjects = notInPaths.compactMap { path -> String? in
+            URL(fileURLWithPath: path).lastPathComponent
+        }
+
+        guard !validProjects.isEmpty else { return }
+
+        // Build IN clause for valid projects
+        let projectList = validProjects
+            .map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" }
+            .joined(separator: ",")
+
+        // Delete items from projects no longer in the scan
+        // Using metadata->>'project' to extract project name from JSONB
+        let deleteSQL = """
+            DELETE FROM beacon_items
+            WHERE source = '\(escapedSource)'
+              AND metadata->>'project' NOT IN (\(projectList))
+            """
+
+        do {
+            _ = try await client.query(PostgresQuery(unsafeSQL: deleteSQL))
+            logger.info("Cleaned up items from removed projects (source: \(source))")
+        } catch {
+            logger.error("Failed to clean up inactive items: \(error)")
+            throw DatabaseError.queryFailed("Failed to clean up inactive items")
+        }
+    }
+
+    /// Get items by source and item type
+    /// - Parameters:
+    ///   - source: The source type (e.g., "local")
+    ///   - itemType: Optional item type filter (e.g., "gsd_file", "commit")
+    ///   - limit: Maximum items to return
+    /// - Returns: Array of matching BeaconItems
+    func getItems(source: String, itemType: String? = nil, limit: Int = 100) async throws -> [BeaconItem] {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let escapedSource = source.replacingOccurrences(of: "'", with: "''")
+
+        var whereClause = "source = '\(escapedSource)'"
+        if let itemType = itemType {
+            let escapedType = itemType.replacingOccurrences(of: "'", with: "''")
+            whereClause += " AND item_type = '\(escapedType)'"
+        }
+
+        let querySQL = """
+            SELECT id::text, item_type, source, external_id, title, content,
+                   summary, metadata::text, created_at, updated_at, indexed_at
+            FROM beacon_items
+            WHERE \(whereClause)
+            ORDER BY updated_at DESC
+            LIMIT \(limit)
+            """
+
+        var items: [BeaconItem] = []
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+
+        for try await row in rows {
+            let item = try decodeBeaconItem(from: row)
+            items.append(item)
+        }
+
+        return items
+    }
+
     // MARK: - Private Helpers
 
     /// Decode a BeaconItem from a PostgreSQL row
