@@ -951,9 +951,9 @@ actor DatabaseService {
             throw DatabaseError.queryFailed("Invalid progress score data")
         }
 
-        var signals: [ProgressSignal] = []
+        var signals: [ProgressScoreSignal] = []
         if let json = signalsJSON, let data = json.data(using: .utf8) {
-            signals = (try? JSONDecoder().decode([ProgressSignal].self, from: data)) ?? []
+            signals = (try? JSONDecoder().decode([ProgressScoreSignal].self, from: data)) ?? []
         }
 
         return ProgressScore(
@@ -1009,9 +1009,9 @@ actor DatabaseService {
             throw DatabaseError.queryFailed("Invalid progress score data")
         }
 
-        var signals: [ProgressSignal] = []
+        var signals: [ProgressScoreSignal] = []
         if let json = signalsJSON, let data = json.data(using: .utf8) {
-            signals = (try? JSONDecoder().decode([ProgressSignal].self, from: data)) ?? []
+            signals = (try? JSONDecoder().decode([ProgressScoreSignal].self, from: data)) ?? []
         }
 
         let score = ProgressScore(

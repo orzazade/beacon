@@ -431,11 +431,12 @@ extension BeaconItem {
 
     /// Extract potential progress signals from content
     /// Returns tuples of (signalType, matched text)
-    var extractedProgressSignals: [(ProgressSignalType, String)] {
+    /// Uses ProgressScoreSignalType from AIProgress.swift
+    var extractedProgressSignals: [(ProgressScoreSignalType, String)] {
         guard let content = content else { return [] }
         let searchText = content.lowercased()
 
-        var signals: [(ProgressSignalType, String)] = []
+        var signals: [(ProgressScoreSignalType, String)] = []
 
         // Completion signals
         let completionKeywords = ["completed", "done", "finished", "merged", "resolved", "closed", "fixed"]
