@@ -138,6 +138,50 @@ actor AzureDevOpsService {
         return allItems
     }
 
+    // MARK: - Work Item Operations
+
+    /// Mark a work item as complete by updating its state
+    /// - Parameters:
+    ///   - id: The work item ID to update
+    ///   - targetState: The state to set (defaults to "Closed")
+    /// Note: Different process templates use different terminal states:
+    /// - Agile: "Closed"
+    /// - Scrum: "Done"
+    /// - CMMI: "Closed"
+    func completeWorkItem(id: Int, targetState: String = "Closed") async throws {
+        guard let org = organization else {
+            throw AzureDevOpsError.notConfigured
+        }
+
+        let token = try await auth.acquireDevOpsToken()
+
+        let url = URL(string: "https://dev.azure.com/\(org)/_apis/wit/workitems/\(id)?api-version=7.1")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json-patch+json", forHTTPHeaderField: "Content-Type")
+
+        // JSON Patch format for updating state
+        let patch: [[String: Any]] = [
+            [
+                "op": "add",
+                "path": "/fields/System.State",
+                "value": targetState
+            ]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: patch)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AzureDevOpsError.invalidResponse
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw AzureDevOpsError.httpError(httpResponse.statusCode)
+        }
+    }
+
     // MARK: - Model Mapping
 
     /// Map Azure DevOps work item to unified WorkItem model
