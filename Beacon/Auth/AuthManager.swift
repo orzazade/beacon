@@ -126,6 +126,23 @@ class AuthManager: ObservableObject {
         try await gmailService.getStarredEmails()
     }
 
+    // MARK: - Archive/Complete Actions
+
+    /// Archive a Gmail message by removing INBOX label
+    func archiveGmailMessage(id: String) async throws {
+        try await gmailService.archiveMessage(id: id)
+    }
+
+    /// Archive an Outlook message by moving to Archive folder
+    func archiveOutlookMessage(id: String) async throws {
+        try await outlookService.archiveMessage(id: id)
+    }
+
+    /// Complete a work item in Azure DevOps by updating its state
+    func completeAzureDevOpsWorkItem(id: Int) async throws {
+        try await devOpsService.completeWorkItem(id: id)
+    }
+
     // MARK: - Google
 
     func signInWithGoogle() async {
