@@ -328,3 +328,47 @@ extension BeaconItem {
         )
     }
 }
+
+// MARK: - Priority Analysis Extension
+
+extension BeaconItem {
+    /// Key for storing manual priority override in metadata
+    static let priorityOverrideKey = "manual_priority"
+
+    /// Check if this item has a manual priority override stored in metadata
+    var hasManualPriorityOverride: Bool {
+        metadata?[Self.priorityOverrideKey] != nil
+    }
+
+    /// Get manual priority override from metadata if set
+    var manualPriorityOverride: AIPriorityLevel? {
+        guard let levelStr = metadata?[Self.priorityOverrideKey] else { return nil }
+        return AIPriorityLevel(from: levelStr)
+    }
+
+    /// Check if item needs priority analysis
+    /// Returns true if never analyzed or content has changed since last analysis
+    func needsPriorityAnalysis(analyzedAt: Date?) -> Bool {
+        guard let analyzedAt = analyzedAt else { return true }
+        return updatedAt > analyzedAt
+    }
+
+    /// Truncate content for AI prompt (max 300 chars per research guidelines)
+    var truncatedContentForAnalysis: String {
+        guard let content = content else { return title }
+        if content.count <= 300 {
+            return content
+        }
+        return String(content.prefix(300)) + "..."
+    }
+
+    /// Get sender email from metadata (normalized to lowercase)
+    var senderEmailNormalized: String? {
+        metadata?["sender_email"]?.lowercased()
+    }
+
+    /// Days since item was created (for age escalation)
+    var daysSinceCreated: Int {
+        Calendar.current.dateComponents([.day], from: createdAt, to: Date()).day ?? 0
+    }
+}
