@@ -43,7 +43,7 @@ targets:
         com.apple.security.app-sandbox: true
         com.apple.security.network.client: true
         keychain-access-groups:
-          - $(AppIdentifierPrefix)com.scifi.beacon
+          - $(AppIdentifierPrefix)com.microsoft.identity.universalstorage
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.scifi.beacon

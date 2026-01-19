@@ -34,8 +34,8 @@ actor MicrosoftAuth {
         )
 
         // Configure keychain for sandboxed macOS app
-        // Using the bundle ID as keychain group works with app sandbox
-        config.cacheConfig.keychainSharingGroup = "com.scifi.beacon"
+        // Use MSAL's default macOS keychain group
+        config.cacheConfig.keychainSharingGroup = "com.microsoft.identity.universalstorage"
 
         application = try MSALPublicClientApplication(configuration: config)
     }
