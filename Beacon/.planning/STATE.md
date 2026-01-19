@@ -3,11 +3,11 @@
 ## Current Position
 
 Phase: 12 of 17 (Local File Scanner)
-Plan: 1 of 3 in current phase
+Plan: 2 of 3 in current phase
 Status: In progress
-Last activity: 2026-01-19 - Completed 12-01-PLAN.md
+Last activity: 2026-01-19 - Completed 12-02-PLAN.md
 
-Progress: ███░░░░░░░ 38%
+Progress: ████░░░░░░ 40%
 
 ## Active Milestone
 
@@ -141,6 +141,17 @@ Progress: ███░░░░░░░ 38%
   - extractTicketCommits: Git CLI via Process with ticket regex
   - scanGSDDirectory/scanPhasesDirectory: GSD file discovery
 
+**Phase 12 Implementation (Local File Scanner - Plan 02):**
+- DatabaseModels.swift: BeaconItem.from(gsdDocument:) and from(commit:project:repoPath:) extensions
+- DatabaseService.swift: markItemsInactive and getItems methods for local scanner
+- LocalFileScannerService.swift: Refactored to use extensions, added item counting, embedding trigger
+- AIManager.swift: getLocalItems, searchByTicketId, getCommitsForTicket, getGSDFilesForProject
+
+**Phase 12 Decisions:**
+- Store ticket IDs as comma-separated string in single metadata field
+- Use project name from URL path for cleanup filtering via JSONB
+- Batch embeddings in groups of 10 with 50ms delay
+
 ## Pending Todos
 
 - [ ] Test suite (deferred from v1.0, consider for v1.1)
@@ -160,6 +171,6 @@ None - Phase 11 verified complete
 ## Session Continuity
 
 Last session: 2026-01-19
-Stopped at: Completed 12-01-PLAN.md
+Stopped at: Completed 12-02-PLAN.md
 Resume file: None
-Next: Execute 12-02-PLAN.md with /gsd:execute-phase 12
+Next: Execute 12-03-PLAN.md with /gsd:execute-phase 12

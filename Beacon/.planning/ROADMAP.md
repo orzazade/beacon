@@ -140,7 +140,7 @@ Files created:
 
 Plans:
 - [x] 12-01: PLAN.md (Core Scanner Service - 7 tasks)
-- [ ] 12-02: PLAN.md (Database Integration)
+- [x] 12-02: PLAN.md (Database Integration - 5 tasks)
 - [ ] 12-03: PLAN.md (UI Integration)
 
 #### Phase 13: AI Priority Analysis
@@ -207,7 +207,7 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12 → 13 → 14 → 
 | 9. Data Persistence | v1.1 | 1/1 | ✅ Complete | 2026-01-19 |
 | 10. Archive & Snooze | v1.1 | 1/1 | ✅ Complete | 2026-01-19 |
 | 11. Teams Integration | v1.1 | 2/3 | 🚧 In Progress | - |
-| 12. Local File Scanner | v1.1 | 1/3 | 🚧 In Progress | - |
+| 12. Local File Scanner | v1.1 | 2/3 | 🚧 In Progress | - |
 | 13. AI Priority Analysis | v1.1 | 0/? | Not started | - |
 | 14. Smart Progress Tracking | v1.1 | 0/? | Not started | - |
 | 15. Daily AI Briefing | v1.1 | 0/? | Not started | - |
