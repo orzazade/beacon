@@ -37,6 +37,8 @@ targets:
       - package: KeyboardShortcuts
     info:
       path: Info.plist
+    entitlements:
+      path: Beacon.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.scifi.beacon
@@ -45,3 +47,4 @@ targets:
         INFOPLIST_FILE: Info.plist
         CODE_SIGN_STYLE: Automatic
         ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: Beacon.entitlements
