@@ -12,8 +12,8 @@ actor MicrosoftAuth {
     private var application: MSALPublicClientApplication?
     private let tokenStore: TokenStore
 
-    // Scopes for Microsoft Graph (Outlook)
-    private let graphScopes = ["User.Read", "Mail.Read", "Mail.ReadWrite"]
+    // Scopes for Microsoft Graph (Outlook and Teams)
+    private let graphScopes = ["User.Read", "Mail.Read", "Mail.ReadWrite", "Chat.Read"]
 
     // Scopes for Azure DevOps
     private let devOpsScopes = ["499b84ac-1321-427f-aa17-267ca6975798/.default"]
