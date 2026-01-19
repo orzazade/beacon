@@ -17,6 +17,10 @@ class AIManager: ObservableObject {
     private let openRouter: OpenRouterService
     private let database: DatabaseService
 
+    // Priority Analysis
+    private let priorityPipeline: PriorityPipeline
+    private let priorityAnalysis: PriorityAnalysisService
+
     // State
     @Published var isOllamaAvailable = false
     @Published var isOpenRouterConfigured = false
@@ -29,11 +33,18 @@ class AIManager: ObservableObject {
     init(
         ollama: OllamaService = OllamaService(),
         openRouter: OpenRouterService = OpenRouterService(),
-        database: DatabaseService = DatabaseService()
+        database: DatabaseService = DatabaseService(),
+        priorityAnalysis: PriorityAnalysisService? = nil,
+        priorityPipeline: PriorityPipeline? = nil
     ) {
         self.ollama = ollama
         self.openRouter = openRouter
         self.database = database
+        self.priorityAnalysis = priorityAnalysis ?? PriorityAnalysisService(openRouter: openRouter)
+        self.priorityPipeline = priorityPipeline ?? PriorityPipeline(
+            analysisService: self.priorityAnalysis,
+            database: database
+        )
     }
 
     // MARK: - Initialization
@@ -56,6 +67,62 @@ class AIManager: ObservableObject {
 
         // Connect database
         try? await database.connect()
+
+        // Load VIP emails for priority analysis
+        if let vipEmails = try? await database.getVIPEmails() {
+            await priorityPipeline.setVIPEmails(vipEmails)
+        }
+    }
+
+    // MARK: - Priority Pipeline
+
+    /// Start background priority analysis
+    func startPriorityPipeline() {
+        priorityPipeline.start()
+    }
+
+    /// Stop background priority analysis
+    func stopPriorityPipeline() {
+        priorityPipeline.stop()
+    }
+
+    /// Get priority pipeline statistics
+    var priorityPipelineStats: PipelineStatistics {
+        priorityPipeline.statistics
+    }
+
+    /// Configure daily token limit for priority analysis
+    func setPriorityDailyLimit(_ limit: Int) {
+        priorityPipeline.setDailyTokenLimit(limit)
+    }
+
+    /// Configure VIP emails for priority boost
+    func setPriorityVIPEmails(_ emails: [String]) async {
+        await priorityPipeline.setVIPEmails(emails)
+    }
+
+    /// Trigger immediate priority analysis
+    func triggerPriorityAnalysis() async {
+        await priorityPipeline.triggerNow()
+    }
+
+    /// Get priority score for an item
+    func getPriorityScore(for itemId: UUID) async throws -> PriorityScore? {
+        try await database.getPriorityScore(itemId: itemId)
+    }
+
+    /// Manually set priority for an item (override AI)
+    func setManualPriority(itemId: UUID, level: AIPriorityLevel, reasoning: String = "Manual override") async throws {
+        let score = PriorityScore(
+            itemId: itemId,
+            level: level,
+            confidence: 1.0,
+            reasoning: reasoning,
+            signals: [],
+            isManualOverride: true,
+            modelUsed: "manual"
+        )
+        try await database.storePriorityScore(score)
     }
 
     // MARK: - Embeddings
