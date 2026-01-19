@@ -389,6 +389,86 @@ actor DatabaseService {
         return 0
     }
 
+    // MARK: - Snooze Operations
+
+    /// Store a snoozed task
+    /// - Parameter snooze: The snoozed task to store
+    func storeSnooze(_ snooze: SnoozedTask) async throws {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let escapedTaskId = snooze.taskId.replacingOccurrences(of: "'", with: "''")
+        let escapedSource = snooze.taskSource.replacingOccurrences(of: "'", with: "''")
+
+        let insertSQL = """
+            INSERT INTO snoozed_tasks (id, task_id, task_source, snooze_until, created_at)
+            VALUES (
+                '\(snooze.id.uuidString)',
+                '\(escapedTaskId)',
+                '\(escapedSource)',
+                '\(ISO8601DateFormatter().string(from: snooze.snoozeUntil))',
+                '\(ISO8601DateFormatter().string(from: snooze.createdAt))'
+            )
+            ON CONFLICT (task_source, task_id) DO UPDATE SET
+                snooze_until = EXCLUDED.snooze_until
+            """
+
+        do {
+            _ = try await client.query(PostgresQuery(unsafeSQL: insertSQL))
+        } catch {
+            logger.error("Failed to store snooze: \(error)")
+            throw DatabaseError.insertFailed
+        }
+    }
+
+    /// Get all active (non-expired) snoozed task IDs
+    /// - Returns: Set of task IDs (source:externalId) that are currently snoozed
+    func getActiveSnoozedTaskIds() async throws -> Set<String> {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = """
+            SELECT task_source, task_id FROM snoozed_tasks
+            WHERE snooze_until > NOW()
+            """
+
+        var snoozedIds = Set<String>()
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+        for try await row in rows {
+            let (source, taskId) = try row.decode((String, String).self)
+            snoozedIds.insert("\(source):\(taskId)")
+        }
+
+        return snoozedIds
+    }
+
+    /// Remove a snooze (unsnooze task)
+    /// - Parameters:
+    ///   - taskId: The external task ID
+    ///   - source: The task source
+    func removeSnooze(taskId: String, source: String) async throws {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let escapedTaskId = taskId.replacingOccurrences(of: "'", with: "''")
+        let escapedSource = source.replacingOccurrences(of: "'", with: "''")
+
+        let deleteSQL = "DELETE FROM snoozed_tasks WHERE task_id = '\(escapedTaskId)' AND task_source = '\(escapedSource)'"
+        _ = try await client.query(PostgresQuery(unsafeSQL: deleteSQL))
+    }
+
+    /// Clean up expired snoozes
+    func cleanupExpiredSnoozes() async throws {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        _ = try await client.query(PostgresQuery(unsafeSQL: "DELETE FROM snoozed_tasks WHERE snooze_until <= NOW()"))
+    }
+
     // MARK: - Private Helpers
 
     /// Decode a BeaconItem from a PostgreSQL row

@@ -82,6 +82,19 @@ CREATE TABLE IF NOT EXISTS beacon_progress (
 CREATE INDEX IF NOT EXISTS idx_beacon_progress_item ON beacon_progress(item_id);
 CREATE INDEX IF NOT EXISTS idx_beacon_progress_date ON beacon_progress(inferred_at DESC);
 
+-- Snoozed tasks table (local snooze functionality)
+CREATE TABLE IF NOT EXISTS snoozed_tasks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id TEXT NOT NULL,
+    task_source TEXT NOT NULL,
+    snooze_until TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(task_source, task_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_snoozed_tasks_until ON snoozed_tasks(snooze_until);
+CREATE INDEX IF NOT EXISTS idx_snoozed_tasks_source_id ON snoozed_tasks(task_source, task_id);
+
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
