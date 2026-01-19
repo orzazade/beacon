@@ -676,6 +676,360 @@ actor DatabaseService {
         _ = try await client.query(PostgresQuery(unsafeSQL: deleteSQL))
     }
 
+    // MARK: - Progress Tracking Operations
+    // Schema (document in comments):
+    // CREATE TABLE beacon_progress_scores (
+    //     id UUID PRIMARY KEY,
+    //     item_id UUID UNIQUE REFERENCES beacon_items(id),
+    //     state TEXT NOT NULL,
+    //     confidence REAL NOT NULL,
+    //     reasoning TEXT,
+    //     signals JSONB DEFAULT '[]',
+    //     is_manual_override BOOLEAN DEFAULT FALSE,
+    //     inferred_at TIMESTAMPTZ DEFAULT NOW(),
+    //     last_activity_at TIMESTAMPTZ,
+    //     model_used TEXT
+    // );
+    //
+    // CREATE INDEX idx_progress_state ON beacon_progress_scores(state);
+    // ALTER TABLE beacon_items ADD COLUMN progress_analyzed_at TIMESTAMPTZ;
+
+    /// Store a progress score for an item (upsert by item_id)
+    func storeProgressScore(_ score: ProgressScore) async throws {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let escapedReasoning = score.reasoning.replacingOccurrences(of: "'", with: "''")
+        let signalsJSON: String
+        do {
+            let data = try JSONEncoder().encode(score.signals)
+            signalsJSON = String(data: data, encoding: .utf8) ?? "[]"
+        } catch {
+            signalsJSON = "[]"
+        }
+        let escapedSignals = signalsJSON.replacingOccurrences(of: "'", with: "''")
+
+        let lastActivitySQL = score.lastActivityAt.map { "'\(ISO8601DateFormatter().string(from: $0))'" } ?? "NULL"
+
+        let insertSQL = """
+            INSERT INTO beacon_progress_scores (
+                id, item_id, state, confidence, reasoning, signals,
+                is_manual_override, inferred_at, last_activity_at, model_used
+            ) VALUES (
+                '\(score.id.uuidString)',
+                '\(score.itemId.uuidString)',
+                '\(score.state.rawValue)',
+                \(score.confidence),
+                '\(escapedReasoning)',
+                '\(escapedSignals)'::jsonb,
+                \(score.isManualOverride),
+                '\(ISO8601DateFormatter().string(from: score.inferredAt))',
+                \(lastActivitySQL),
+                '\(score.modelUsed)'
+            )
+            ON CONFLICT (item_id)
+            DO UPDATE SET
+                state = EXCLUDED.state,
+                confidence = EXCLUDED.confidence,
+                reasoning = EXCLUDED.reasoning,
+                signals = EXCLUDED.signals,
+                is_manual_override = EXCLUDED.is_manual_override,
+                inferred_at = EXCLUDED.inferred_at,
+                last_activity_at = EXCLUDED.last_activity_at,
+                model_used = EXCLUDED.model_used
+            """
+
+        do {
+            _ = try await client.query(PostgresQuery(unsafeSQL: insertSQL))
+
+            // Update item's progress_analyzed_at timestamp
+            let updateSQL = """
+                UPDATE beacon_items
+                SET progress_analyzed_at = NOW()
+                WHERE id = '\(score.itemId.uuidString)'
+                """
+            _ = try await client.query(PostgresQuery(unsafeSQL: updateSQL))
+        } catch {
+            logger.error("Failed to store progress score: \(String(reflecting: error))")
+            throw DatabaseError.insertFailed
+        }
+    }
+
+    /// Store multiple progress scores in batch
+    func storeProgressScores(_ scores: [ProgressScore]) async throws {
+        for score in scores {
+            try await storeProgressScore(score)
+        }
+    }
+
+    /// Get items pending progress analysis
+    /// Returns items that have a priority score AND (never analyzed for progress OR updated since last analysis)
+    func getItemsPendingProgress(limit: Int = 10) async throws -> [BeaconItem] {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = """
+            SELECT bi.id::text, bi.item_type, bi.source, bi.external_id, bi.title, bi.content,
+                   bi.summary, bi.metadata::text, bi.created_at, bi.updated_at, bi.indexed_at
+            FROM beacon_items bi
+            INNER JOIN beacon_priority_scores bps ON bi.id = bps.item_id
+            WHERE bi.progress_analyzed_at IS NULL
+               OR bi.updated_at > bi.progress_analyzed_at
+            ORDER BY
+                CASE WHEN bi.progress_analyzed_at IS NULL THEN 0 ELSE 1 END,
+                bi.updated_at DESC
+            LIMIT \(limit)
+            """
+
+        var items: [BeaconItem] = []
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+
+        for try await row in rows {
+            let item = try decodeBeaconItem(from: row)
+            items.append(item)
+        }
+
+        return items
+    }
+
+    /// Get progress score for a specific item
+    func getProgressScore(itemId: UUID) async throws -> ProgressScore? {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = """
+            SELECT id::text, item_id::text, state::text, confidence, reasoning,
+                   signals::text, is_manual_override, inferred_at, last_activity_at, model_used
+            FROM beacon_progress_scores
+            WHERE item_id = '\(itemId.uuidString)'
+            """
+
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+        for try await row in rows {
+            return try decodeProgressScore(from: row)
+        }
+        return nil
+    }
+
+    /// Batch fetch progress scores for multiple items
+    func getProgressScores(itemIds: [UUID]) async throws -> [ProgressScore] {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        guard !itemIds.isEmpty else { return [] }
+
+        let idsStr = itemIds.map { "'\($0.uuidString)'" }.joined(separator: ",")
+
+        let querySQL = """
+            SELECT id::text, item_id::text, state::text, confidence, reasoning,
+                   signals::text, is_manual_override, inferred_at, last_activity_at, model_used
+            FROM beacon_progress_scores
+            WHERE item_id IN (\(idsStr))
+            """
+
+        var scores: [ProgressScore] = []
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+
+        for try await row in rows {
+            let score = try decodeProgressScore(from: row)
+            scores.append(score)
+        }
+
+        return scores
+    }
+
+    /// Get items with their progress scores, optionally filtered by state
+    func getItemsWithProgress(state: ProgressState? = nil, limit: Int = 50) async throws -> [(BeaconItem, ProgressScore)] {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        var whereClause = ""
+        if let state = state {
+            whereClause = "WHERE bps.state = '\(state.rawValue)'"
+        }
+
+        let querySQL = """
+            SELECT bi.id::text, bi.item_type, bi.source, bi.external_id, bi.title, bi.content,
+                   bi.summary, bi.metadata::text, bi.created_at, bi.updated_at, bi.indexed_at,
+                   bps.id::text, bps.item_id::text, bps.state::text, bps.confidence, bps.reasoning,
+                   bps.signals::text, bps.is_manual_override, bps.inferred_at, bps.last_activity_at, bps.model_used
+            FROM beacon_items bi
+            INNER JOIN beacon_progress_scores bps ON bi.id = bps.item_id
+            \(whereClause)
+            ORDER BY
+                CASE bps.state
+                    WHEN 'blocked' THEN 0
+                    WHEN 'in_progress' THEN 1
+                    WHEN 'stale' THEN 2
+                    WHEN 'not_started' THEN 3
+                    WHEN 'done' THEN 4
+                END,
+                bi.updated_at DESC
+            LIMIT \(limit)
+            """
+
+        var results: [(BeaconItem, ProgressScore)] = []
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+
+        for try await row in rows {
+            let result = try decodeBeaconItemWithProgressScore(from: row)
+            results.append(result)
+        }
+
+        return results
+    }
+
+    /// Update progress with manual override
+    func updateProgressManualOverride(itemId: UUID, state: ProgressState) async throws {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let updateSQL = """
+            UPDATE beacon_progress_scores
+            SET state = '\(state.rawValue)',
+                is_manual_override = TRUE,
+                inferred_at = NOW()
+            WHERE item_id = '\(itemId.uuidString)'
+            """
+
+        do {
+            _ = try await client.query(PostgresQuery(unsafeSQL: updateSQL))
+        } catch {
+            logger.error("Failed to update manual override: \(String(reflecting: error))")
+            throw DatabaseError.queryFailed("Failed to update manual override")
+        }
+    }
+
+    /// Get items that are stale (in progress but no activity for threshold)
+    /// - Parameter threshold: Seconds of inactivity (default: 3 days)
+    func getStaleItems(threshold: TimeInterval = 3 * 24 * 60 * 60) async throws -> [UUID] {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        // Convert threshold to PostgreSQL interval
+        let thresholdHours = Int(threshold / 3600)
+
+        let querySQL = """
+            SELECT item_id::text
+            FROM beacon_progress_scores
+            WHERE state = 'in_progress'
+              AND (
+                  last_activity_at IS NULL
+                  OR last_activity_at < NOW() - INTERVAL '\(thresholdHours) hours'
+              )
+            """
+
+        var staleIds: [UUID] = []
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+
+        for try await row in rows {
+            let idStr = try row.decode(String.self)
+            if let id = UUID(uuidString: idStr) {
+                staleIds.append(id)
+            }
+        }
+
+        return staleIds
+    }
+
+    // MARK: - Progress Score Decoding
+
+    private func decodeProgressScore(from row: PostgresRow) throws -> ProgressScore {
+        let (idStr, itemIdStr, stateStr, confidence, reasoning, signalsJSON, isManual, inferredAt, lastActivityAt, modelUsed) =
+            try row.decode((String, String, String, Float, String?, String?, Bool, Date, Date?, String?).self)
+
+        guard let id = UUID(uuidString: idStr),
+              let itemId = UUID(uuidString: itemIdStr),
+              let state = ProgressState(from: stateStr) else {
+            throw DatabaseError.queryFailed("Invalid progress score data")
+        }
+
+        var signals: [ProgressSignal] = []
+        if let json = signalsJSON, let data = json.data(using: .utf8) {
+            signals = (try? JSONDecoder().decode([ProgressSignal].self, from: data)) ?? []
+        }
+
+        return ProgressScore(
+            id: id,
+            itemId: itemId,
+            state: state,
+            confidence: confidence,
+            reasoning: reasoning ?? "",
+            signals: signals,
+            isManualOverride: isManual,
+            inferredAt: inferredAt,
+            lastActivityAt: lastActivityAt,
+            modelUsed: modelUsed ?? "unknown"
+        )
+    }
+
+    private func decodeBeaconItemWithProgressScore(from row: PostgresRow) throws -> (BeaconItem, ProgressScore) {
+        // Decode all columns: item (11) + progress score (10)
+        let (idStr, itemType, source, externalId, title, content, summary, metadataJSON, createdAt, updatedAt, indexedAt,
+             scoreIdStr, scoreItemIdStr, stateStr, confidence, reasoning, signalsJSON, isManual, inferredAt, lastActivityAt, modelUsed) =
+            try row.decode((String, String, String, String?, String, String?, String?, String?, Date, Date, Date?,
+                           String, String, String, Float, String?, String?, Bool, Date, Date?, String?).self)
+
+        // Decode BeaconItem
+        guard let itemId = UUID(uuidString: idStr) else {
+            throw DatabaseError.queryFailed("Invalid UUID format")
+        }
+
+        var metadata: [String: String]?
+        if let json = metadataJSON, let data = json.data(using: String.Encoding.utf8) {
+            metadata = try? JSONDecoder().decode([String: String].self, from: data)
+        }
+
+        let item = BeaconItem(
+            id: itemId,
+            itemType: itemType,
+            source: source,
+            externalId: externalId,
+            title: title,
+            content: content,
+            summary: summary,
+            metadata: metadata,
+            embedding: nil,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            indexedAt: indexedAt
+        )
+
+        // Decode ProgressScore
+        guard let scoreId = UUID(uuidString: scoreIdStr),
+              let scoreItemId = UUID(uuidString: scoreItemIdStr),
+              let state = ProgressState(from: stateStr) else {
+            throw DatabaseError.queryFailed("Invalid progress score data")
+        }
+
+        var signals: [ProgressSignal] = []
+        if let json = signalsJSON, let data = json.data(using: .utf8) {
+            signals = (try? JSONDecoder().decode([ProgressSignal].self, from: data)) ?? []
+        }
+
+        let score = ProgressScore(
+            id: scoreId,
+            itemId: scoreItemId,
+            state: state,
+            confidence: confidence,
+            reasoning: reasoning ?? "",
+            signals: signals,
+            isManualOverride: isManual,
+            inferredAt: inferredAt,
+            lastActivityAt: lastActivityAt,
+            modelUsed: modelUsed ?? "unknown"
+        )
+
+        return (item, score)
+    }
+
     // MARK: - Priority Score Decoding
 
     private func decodePriorityScore(from row: PostgresRow) throws -> PriorityScore {
