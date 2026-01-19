@@ -4,7 +4,9 @@ import AppKit
 /// Tasks tab showing unified tasks from all sources (Azure DevOps, Outlook, Gmail)
 struct TasksTab: View {
     @StateObject private var viewModel: UnifiedTasksViewModel
-    @State private var showComingSoonAlert = false
+    @State private var showSnoozeSheet = false
+    @State private var isPerformingAction = false
+    @State private var actionError: String?
 
     init(authManager: AuthManager) {
         _viewModel = StateObject(wrappedValue: UnifiedTasksViewModel(authManager: authManager))
@@ -45,22 +47,40 @@ struct TasksTab: View {
                         viewModel.clearSelection()
                     },
                     onArchive: {
-                        // v1.0: Show coming soon alert
-                        showComingSoonAlert = true
+                        Task {
+                            await handleArchiveOrComplete(selectedTask)
+                        }
                     },
                     onSnooze: {
-                        // v1.0: Show coming soon alert
-                        showComingSoonAlert = true
+                        showSnoozeSheet = true
                     }
                 )
                 .transition(.move(edge: .trailing))
             }
         }
         .animation(.easeInOut(duration: 0.2), value: isShowingDetail)
-        .alert("Coming Soon", isPresented: $showComingSoonAlert) {
-            Button("OK", role: .cancel) { }
+        .sheet(isPresented: $showSnoozeSheet) {
+            if let task = viewModel.selectedTask {
+                SnoozeSheet(
+                    task: task,
+                    onSnooze: { duration in
+                        Task {
+                            await handleSnooze(task, duration: duration)
+                        }
+                    },
+                    onCancel: {
+                        showSnoozeSheet = false
+                    }
+                )
+            }
+        }
+        .alert("Action Error", isPresented: .init(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("OK", role: .cancel) { actionError = nil }
         } message: {
-            Text("This feature will be available in a future update.")
+            Text(actionError ?? "")
         }
         .task {
             await viewModel.loadAllTasks()
@@ -113,6 +133,39 @@ struct TasksTab: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    // MARK: - Action Handlers
+
+    private func handleArchiveOrComplete(_ task: any UnifiedTask) async {
+        isPerformingAction = true
+        defer { isPerformingAction = false }
+
+        do {
+            if let workItem = task as? WorkItem {
+                try await viewModel.completeWorkItem(workItem)
+            } else if let email = task as? Email {
+                try await viewModel.archiveEmail(email)
+            }
+            viewModel.clearSelection()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func handleSnooze(_ task: any UnifiedTask, duration: SnoozeDuration) async {
+        isPerformingAction = true
+        defer { isPerformingAction = false }
+
+        do {
+            try await viewModel.snoozeTask(task, duration: duration)
+            showSnoozeSheet = false
+            viewModel.clearSelection()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Views
 
     private var taskListView: some View {
         VStack(spacing: 0) {
