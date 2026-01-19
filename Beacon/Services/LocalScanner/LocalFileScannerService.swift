@@ -61,6 +61,7 @@ actor LocalFileScannerService {
 
         var discoveredPaths = Set<String>()
         var projectsScanned = 0
+        var itemsStored = 0
 
         for await repoURL in discoverGitRepositories() {
             // Respect project limit
@@ -77,7 +78,8 @@ actor LocalFileScannerService {
             discoveredPaths.insert(repoURL.path)
 
             do {
-                try await scanProject(at: repoURL)
+                let stored = try await scanProject(at: repoURL)
+                itemsStored += stored
                 projectsScanned += 1
             } catch {
                 print("[LocalScanner] Failed to scan \(projectName): \(error)")
@@ -86,22 +88,32 @@ actor LocalFileScannerService {
 
         // Clean up items from deleted/removed projects
         try await markItemsInactive(notInPaths: discoveredPaths)
+
+        // Trigger embedding generation for newly stored items
+        if itemsStored > 0 {
+            await triggerEmbeddingGeneration()
+        }
+
+        print("[LocalScanner] Scan complete: \(projectsScanned) projects, \(itemsStored) items stored")
     }
 
     /// Scan a single project for GSD files and commits
-    private func scanProject(at url: URL) async throws {
+    /// - Returns: Number of items stored
+    private func scanProject(at url: URL) async throws -> Int {
         let projectName = url.lastPathComponent
+        var itemCount = 0
 
         // 1. Scan GSD files if .planning exists
         let planningDir = url.appending(path: ".planning")
         if FileManager.default.fileExists(atPath: planningDir.path) {
-            try await scanGSDDirectory(planningDir, project: projectName)
+            itemCount += try await scanGSDDirectory(planningDir, project: projectName)
         }
 
         // 2. Extract commits with ticket IDs
         let commits = try await extractTicketCommits(in: url)
         for commit in commits {
             try await storeCommit(commit, project: projectName, repoPath: url.path)
+            itemCount += 1
         }
 
         // Track discovered project
@@ -112,6 +124,8 @@ actor LocalFileScannerService {
             lastScanned: Date()
         )
         updateDiscoveredProject(project)
+
+        return itemCount
     }
 
     private func updateDiscoveredProject(_ project: LocalProject) {
@@ -308,8 +322,10 @@ actor LocalFileScannerService {
     // MARK: - GSD File Scanning
 
     /// Scan the .planning directory for GSD files
-    private func scanGSDDirectory(_ planningDir: URL, project: String) async throws {
+    /// - Returns: Number of items stored
+    private func scanGSDDirectory(_ planningDir: URL, project: String) async throws -> Int {
         let fm = FileManager.default
+        var count = 0
 
         // Scan standard GSD files at root level
         for filename in GSDFileType.standardFiles {
@@ -318,18 +334,23 @@ actor LocalFileScannerService {
 
             let document = try parseGSDFile(at: fileURL, project: project, phaseName: nil)
             try await storeGSDDocument(document)
+            count += 1
         }
 
         // Scan phases directory if it exists
         let phasesDir = planningDir.appending(path: "phases")
         if fm.fileExists(atPath: phasesDir.path) {
-            try await scanPhasesDirectory(phasesDir, project: project)
+            count += try await scanPhasesDirectory(phasesDir, project: project)
         }
+
+        return count
     }
 
     /// Scan the phases subdirectory for phase-specific files
-    private func scanPhasesDirectory(_ phasesDir: URL, project: String) async throws {
+    /// - Returns: Number of items stored
+    private func scanPhasesDirectory(_ phasesDir: URL, project: String) async throws -> Int {
         let fm = FileManager.default
+        var count = 0
 
         let contents = try fm.contentsOfDirectory(
             at: phasesDir,
@@ -352,8 +373,11 @@ actor LocalFileScannerService {
             for fileURL in phaseFiles {
                 let document = try parseGSDFile(at: fileURL, project: project, phaseName: phaseName)
                 try await storeGSDDocument(document)
+                count += 1
             }
         }
+
+        return count
     }
 
     /// Parse a GSD file into a GSDDocument
@@ -404,5 +428,32 @@ actor LocalFileScannerService {
     /// Mark items as inactive that are no longer in discovered paths
     private func markItemsInactive(notInPaths: Set<String>) async throws {
         try await databaseService.markItemsInactive(source: "local", notInPaths: notInPaths)
+    }
+
+    // MARK: - Embedding Generation
+
+    /// Trigger embedding generation in background
+    private func triggerEmbeddingGeneration() async {
+        do {
+            // Process embeddings in small batches
+            var totalProcessed = 0
+            var batchProcessed = 0
+
+            repeat {
+                batchProcessed = try await aiManager.processEmbeddings(batchSize: 10)
+                totalProcessed += batchProcessed
+
+                // Small delay between batches
+                if batchProcessed > 0 {
+                    try await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                }
+            } while batchProcessed > 0
+
+            if totalProcessed > 0 {
+                print("[LocalScanner] Generated embeddings for \(totalProcessed) items")
+            }
+        } catch {
+            print("[LocalScanner] Embedding generation failed: \(error)")
+        }
     }
 }
