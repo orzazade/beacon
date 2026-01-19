@@ -33,8 +33,8 @@ actor MicrosoftAuth {
             authority: authority
         )
 
-        // Don't set custom keychain group - let MSAL use its default
-        // This avoids keychain access issues with ad-hoc signing
+        // Don't set keychainSharingGroup - let MSAL use its default
+        // With proper code signing (DEVELOPMENT_TEAM set), this works correctly
 
         application = try MSALPublicClientApplication(configuration: config)
     }
