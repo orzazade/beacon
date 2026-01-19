@@ -19,7 +19,7 @@ struct SettingsView: View {
                     Label("Shortcuts", systemImage: "keyboard")
                 }
         }
-        .frame(width: 450, height: 300)
+        .frame(width: 450, height: 450)
     }
 }
 
@@ -30,6 +30,11 @@ struct AccountsSettingsView: View {
     // Azure DevOps configuration stored in UserDefaults
     @AppStorage("devOpsOrganization") private var devOpsOrganization: String = ""
     @AppStorage("devOpsProject") private var devOpsProject: String = ""
+
+    // Local scanner configuration
+    @AppStorage("localScannerProjectsRoot") private var projectsRoot: String = ""
+    @AppStorage("localScannerExcludedProjects") private var excludedProjectsString: String = ""
+    @AppStorage("localScannerIntervalMinutes") private var scanIntervalMinutes: Int = 15
 
     var body: some View {
         Form {
@@ -110,6 +115,55 @@ struct AccountsSettingsView: View {
                         .disabled(authManager.isLoading)
                     }
                 }
+            }
+
+            // Local Scanner section
+            Section("Local Project Scanner") {
+                // Status header
+                HStack {
+                    Image(systemName: "folder.badge.gear")
+                        .foregroundColor(.blue)
+
+                    VStack(alignment: .leading) {
+                        Text("\(authManager.localProjectCount) projects discovered")
+                            .font(.subheadline)
+                        if let lastScan = authManager.lastLocalScanTime {
+                            Text("Last scan: \(lastScan, style: .relative) ago")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    if authManager.isLocalScanInProgress {
+                        ProgressView()
+                            .scaleEffect(0.7)
+                    } else {
+                        Button("Scan Now") {
+                            authManager.triggerLocalScan()
+                        }
+                        .controlSize(.small)
+                    }
+                }
+
+                // Projects folder
+                TextField("Projects folder (leave empty for ~/Projects)", text: $projectsRoot)
+
+                // Scan interval picker
+                Picker("Scan interval", selection: $scanIntervalMinutes) {
+                    Text("5 min").tag(5)
+                    Text("15 min").tag(15)
+                    Text("30 min").tag(30)
+                    Text("1 hour").tag(60)
+                }
+
+                // Excluded projects
+                TextField("Excluded projects (comma-separated)", text: $excludedProjectsString)
+
+                Text("Scans git repositories for GSD files and ticket-related commits.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
             // Error display
