@@ -118,14 +118,15 @@ Plans:
 
 #### Phase 11: Teams Integration
 
-**Goal**: Add Microsoft Teams as a data source for marked/important messages
+**Goal**: Add Microsoft Teams as a data source for recent/urgent chat messages
 **Depends on**: Phase 10
-**Research**: Likely (Microsoft Graph Teams API, additional OAuth scopes)
-**Research topics**: Teams message retrieval via Graph API, flagged/saved messages in Teams, OAuth scope requirements
-**Plans**: TBD
+**Research**: Complete (Microsoft Graph Teams API, Chat.Read scope)
+**Research findings**: No dedicated "saved messages" API - focusing on recent chats and urgent messages
 
 Plans:
-- [ ] 11-01: TBD
+- [ ] 11-01: PLAN.md (Teams API Infrastructure - 3 tasks)
+- [ ] 11-02: PLAN.md (Teams Data Integration - 3 tasks)
+- [ ] 11-03: PLAN.md (Teams UI + Verification - 2 tasks)
 
 #### Phase 12: Local File Scanner
 
@@ -200,7 +201,7 @@ Phases execute in numeric order: 8 → 9 → 10 → 11 → 12 → 13 → 14 → 
 | 8. AI Infrastructure | v1.1 | 1/1 | ✅ Complete | 2026-01-19 |
 | 9. Data Persistence | v1.1 | 1/1 | ✅ Complete | 2026-01-19 |
 | 10. Archive & Snooze | v1.1 | 1/1 | ✅ Complete | 2026-01-19 |
-| 11. Teams Integration | v1.1 | 0/? | Not started | - |
+| 11. Teams Integration | v1.1 | 0/3 | 📋 Planned | - |
 | 12. Local File Scanner | v1.1 | 0/? | Not started | - |
 | 13. AI Priority Analysis | v1.1 | 0/? | Not started | - |
 | 14. Smart Progress Tracking | v1.1 | 0/? | Not started | - |
