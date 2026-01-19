@@ -26,6 +26,9 @@ Config/Secrets.swift
 # Docker data volumes
 docker/data/
 
+# GSD Planning (local only, not committed)
+.planning/
+
 # macOS
 .DS_Store
 .AppleDouble
