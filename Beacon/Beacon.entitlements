@@ -9,7 +9,6 @@
     <key>keychain-access-groups</key>
     <array>
         <string>$(AppIdentifierPrefix)com.scifi.beacon</string>
-        <string>$(AppIdentifierPrefix)com.microsoft.adalcache</string>
     </array>
 </dict>
 </plist>

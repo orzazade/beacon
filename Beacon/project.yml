@@ -39,6 +39,11 @@ targets:
       path: Info.plist
     entitlements:
       path: Beacon.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.scifi.beacon
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.scifi.beacon

@@ -33,6 +33,10 @@ actor MicrosoftAuth {
             authority: authority
         )
 
+        // Configure keychain for sandboxed macOS app
+        // Using the bundle ID as keychain group works with app sandbox
+        config.cacheConfig.keychainSharingGroup = "com.scifi.beacon"
+
         application = try MSALPublicClientApplication(configuration: config)
     }
 
