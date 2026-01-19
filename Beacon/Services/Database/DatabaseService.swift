@@ -170,7 +170,8 @@ actor DatabaseService {
             }
             return item.id
         } catch {
-            logger.error("Failed to store item: \(error)")
+            // Use String(reflecting:) to get full error details for PSQLError
+            logger.error("Failed to store item: \(String(reflecting: error))")
             throw DatabaseError.insertFailed
         }
     }
@@ -467,6 +468,243 @@ actor DatabaseService {
         }
 
         _ = try await client.query(PostgresQuery(unsafeSQL: "DELETE FROM snoozed_tasks WHERE snooze_until <= NOW()"))
+    }
+
+    // MARK: - Priority Analysis Operations
+
+    /// Store a priority score for an item
+    func storePriorityScore(_ score: PriorityScore) async throws {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let escapedReasoning = score.reasoning.replacingOccurrences(of: "'", with: "''")
+        let signalsJSON: String
+        do {
+            let data = try JSONEncoder().encode(score.signals)
+            signalsJSON = String(data: data, encoding: .utf8) ?? "[]"
+        } catch {
+            signalsJSON = "[]"
+        }
+        let escapedSignals = signalsJSON.replacingOccurrences(of: "'", with: "''")
+
+        let insertSQL = """
+            INSERT INTO beacon_priority_scores (
+                id, item_id, level, confidence, reasoning, signals,
+                is_manual_override, analyzed_at, model_used, token_cost
+            ) VALUES (
+                '\(score.id.uuidString)',
+                '\(score.itemId.uuidString)',
+                '\(score.level.rawValue)',
+                \(score.confidence),
+                '\(escapedReasoning)',
+                '\(escapedSignals)'::jsonb,
+                \(score.isManualOverride),
+                '\(ISO8601DateFormatter().string(from: score.analyzedAt))',
+                '\(score.modelUsed)',
+                \(score.tokenCost.map { String($0) } ?? "NULL")
+            )
+            ON CONFLICT (item_id)
+            DO UPDATE SET
+                level = EXCLUDED.level,
+                confidence = EXCLUDED.confidence,
+                reasoning = EXCLUDED.reasoning,
+                signals = EXCLUDED.signals,
+                is_manual_override = EXCLUDED.is_manual_override,
+                analyzed_at = EXCLUDED.analyzed_at,
+                model_used = EXCLUDED.model_used,
+                token_cost = EXCLUDED.token_cost
+            """
+
+        do {
+            _ = try await client.query(PostgresQuery(unsafeSQL: insertSQL))
+
+            // Update item's priority_analyzed_at timestamp
+            let updateSQL = """
+                UPDATE beacon_items
+                SET priority_analyzed_at = NOW()
+                WHERE id = '\(score.itemId.uuidString)'
+                """
+            _ = try await client.query(PostgresQuery(unsafeSQL: updateSQL))
+        } catch {
+            logger.error("Failed to store priority score: \(String(reflecting: error))")
+            throw DatabaseError.insertFailed
+        }
+    }
+
+    /// Store multiple priority scores in batch
+    func storePriorityScores(_ scores: [PriorityScore]) async throws {
+        for score in scores {
+            try await storePriorityScore(score)
+        }
+    }
+
+    /// Get items pending priority analysis
+    /// Returns items that have never been analyzed OR have been updated since last analysis
+    func getItemsPendingPriority(limit: Int = 10) async throws -> [BeaconItem] {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = """
+            SELECT id::text, item_type, source, external_id, title, content,
+                   summary, metadata::text, created_at, updated_at, indexed_at
+            FROM beacon_items
+            WHERE priority_analyzed_at IS NULL
+               OR updated_at > priority_analyzed_at
+            ORDER BY
+                CASE WHEN priority_analyzed_at IS NULL THEN 0 ELSE 1 END,
+                updated_at DESC
+            LIMIT \(limit)
+            """
+
+        var items: [BeaconItem] = []
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+
+        for try await row in rows {
+            let item = try decodeBeaconItem(from: row)
+            items.append(item)
+        }
+
+        return items
+    }
+
+    /// Get priority score for an item
+    func getPriorityScore(itemId: UUID) async throws -> PriorityScore? {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = """
+            SELECT id::text, item_id::text, level::text, confidence, reasoning,
+                   signals::text, is_manual_override, analyzed_at, model_used, token_cost
+            FROM beacon_priority_scores
+            WHERE item_id = '\(itemId.uuidString)'
+            """
+
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+        for try await row in rows {
+            return try decodePriorityScore(from: row)
+        }
+        return nil
+    }
+
+    /// Log priority analysis cost
+    func logPriorityCost(itemsProcessed: Int, tokensUsed: Int, modelUsed: String) async throws {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let insertSQL = """
+            INSERT INTO beacon_priority_cost_log (run_date, items_processed, tokens_used, model_used)
+            VALUES (CURRENT_DATE, \(itemsProcessed), \(tokensUsed), '\(modelUsed)')
+            """
+
+        _ = try await client.query(PostgresQuery(unsafeSQL: insertSQL))
+    }
+
+    /// Get today's total token usage
+    func getTodayTokenUsage() async throws -> Int {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = """
+            SELECT COALESCE(SUM(tokens_used), 0)::int
+            FROM beacon_priority_cost_log
+            WHERE run_date = CURRENT_DATE
+            """
+
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+        for try await row in rows {
+            return try row.decode(Int.self)
+        }
+        return 0
+    }
+
+    // MARK: - VIP Contacts
+
+    /// Get all VIP contact emails
+    func getVIPEmails() async throws -> [String] {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = "SELECT email FROM beacon_vip_contacts"
+        var emails: [String] = []
+
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+        for try await row in rows {
+            let email = try row.decode(String.self)
+            emails.append(email)
+        }
+
+        return emails
+    }
+
+    /// Add a VIP contact
+    func addVIPContact(_ contact: VIPContact) async throws {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let escapedEmail = contact.email.replacingOccurrences(of: "'", with: "''")
+        let escapedName = (contact.name ?? "").replacingOccurrences(of: "'", with: "''")
+
+        let insertSQL = """
+            INSERT INTO beacon_vip_contacts (id, email, name, added_at)
+            VALUES (
+                '\(contact.id.uuidString)',
+                '\(escapedEmail)',
+                \(contact.name != nil ? "'\(escapedName)'" : "NULL"),
+                '\(ISO8601DateFormatter().string(from: contact.addedAt))'
+            )
+            ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+            """
+
+        _ = try await client.query(PostgresQuery(unsafeSQL: insertSQL))
+    }
+
+    /// Remove a VIP contact by email
+    func removeVIPContact(email: String) async throws {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let escapedEmail = email.lowercased().replacingOccurrences(of: "'", with: "''")
+        let deleteSQL = "DELETE FROM beacon_vip_contacts WHERE LOWER(email) = '\(escapedEmail)'"
+        _ = try await client.query(PostgresQuery(unsafeSQL: deleteSQL))
+    }
+
+    // MARK: - Priority Score Decoding
+
+    private func decodePriorityScore(from row: PostgresRow) throws -> PriorityScore {
+        let (idStr, itemIdStr, levelStr, confidence, reasoning, signalsJSON, isManual, analyzedAt, modelUsed, tokenCost) =
+            try row.decode((String, String, String, Float, String?, String?, Bool, Date, String?, Int?).self)
+
+        guard let id = UUID(uuidString: idStr),
+              let itemId = UUID(uuidString: itemIdStr),
+              let level = AIPriorityLevel(from: levelStr) else {
+            throw DatabaseError.queryFailed("Invalid priority score data")
+        }
+
+        var signals: [PrioritySignal] = []
+        if let json = signalsJSON, let data = json.data(using: .utf8) {
+            signals = (try? JSONDecoder().decode([PrioritySignal].self, from: data)) ?? []
+        }
+
+        return PriorityScore(
+            id: id,
+            itemId: itemId,
+            level: level,
+            confidence: confidence,
+            reasoning: reasoning ?? "",
+            signals: signals,
+            isManualOverride: isManual,
+            analyzedAt: analyzedAt,
+            modelUsed: modelUsed ?? "unknown",
+            tokenCost: tokenCost
+        )
     }
 
     // MARK: - Local Scanner Support
