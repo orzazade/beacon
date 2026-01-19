@@ -17,7 +17,11 @@ let package = Package(
         // Global keyboard shortcuts with SwiftUI support
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "2.0.0"),
         // PostgreSQL async client for vector database
-        .package(url: "https://github.com/vapor/postgres-nio", from: "1.21.0")
+        .package(url: "https://github.com/vapor/postgres-nio", from: "1.21.0"),
+        // YAML parsing for GSD frontmatter
+        .package(url: "https://github.com/jpsim/Yams", from: "6.0.0"),
+        // Async algorithms for periodic scanning timer
+        .package(url: "https://github.com/apple/swift-async-algorithms", from: "1.0.0")
     ],
     targets: [
         .executableTarget(
@@ -27,7 +31,9 @@ let package = Package(
                 .product(name: "GoogleSignIn", package: "GoogleSignIn-iOS"),
                 "KeychainAccess",
                 "KeyboardShortcuts",
-                .product(name: "PostgresNIO", package: "postgres-nio")
+                .product(name: "PostgresNIO", package: "postgres-nio"),
+                "Yams",
+                .product(name: "AsyncAlgorithms", package: "swift-async-algorithms")
             ],
             path: ".",
             exclude: ["Package.swift", "Info.plist"],
