@@ -19,6 +19,9 @@ class UnifiedTasksViewModel: ObservableObject {
     /// Currently selected task for detail view navigation
     @Published var selectedTask: (any UnifiedTask)?
 
+    /// Set of currently snoozed task IDs (source:externalId format)
+    @Published var snoozedTaskIds: Set<String> = []
+
     /// Count of items stored in database
     @Published var persistedItemCount: Int = 0
 
@@ -37,6 +40,13 @@ class UnifiedTasksViewModel: ObservableObject {
     var filteredTasks: [any UnifiedTask] {
         var result = tasks
 
+        // Exclude snoozed tasks
+        result = result.filter { task in
+            let sourceString = taskSourceToString(task.taskSource)
+            let key = "\(sourceString):\(task.taskId)"
+            return !snoozedTaskIds.contains(key)
+        }
+
         // Apply source filter (empty = show all)
         if !selectedSources.isEmpty {
             result = result.filter { selectedSources.contains($0.taskSource) }
@@ -50,10 +60,22 @@ class UnifiedTasksViewModel: ObservableObject {
         return result
     }
 
+    /// Convert TaskSource to database string format
+    private func taskSourceToString(_ source: TaskSource) -> String {
+        switch source {
+        case .azureDevOps: return "azure_devops"
+        case .outlook: return "outlook"
+        case .gmail: return "gmail"
+        }
+    }
+
     /// Load tasks from all authenticated sources in parallel
     func loadAllTasks() async {
         isLoading = true
         error = nil
+
+        // Load snoozed task IDs first
+        await loadSnoozedTasks()
 
         var allTasks: [any UnifiedTask] = []
         var errors: [String] = []
@@ -196,5 +218,61 @@ class UnifiedTasksViewModel: ObservableObject {
     /// Clear the selected task (return to list)
     func clearSelection() {
         selectedTask = nil
+    }
+
+    // MARK: - Task Actions
+
+    /// Archive an email (Gmail or Outlook)
+    /// - Parameter email: The email to archive
+    func archiveEmail(_ email: Email) async throws {
+        switch email.source {
+        case .gmail:
+            try await authManager.archiveGmailMessage(id: email.id)
+        case .outlook:
+            try await authManager.archiveOutlookMessage(id: email.id)
+        }
+
+        // Remove from local list
+        tasks.removeAll { $0.taskId == email.id }
+    }
+
+    /// Complete a work item in Azure DevOps
+    /// - Parameter workItem: The work item to complete
+    func completeWorkItem(_ workItem: WorkItem) async throws {
+        try await authManager.completeAzureDevOpsWorkItem(id: workItem.id)
+
+        // Remove from local list
+        tasks.removeAll { $0.taskId == String(workItem.id) }
+    }
+
+    /// Snooze a task locally
+    /// - Parameters:
+    ///   - task: The task to snooze
+    ///   - duration: How long to snooze
+    func snoozeTask(_ task: any UnifiedTask, duration: SnoozeDuration) async throws {
+        let sourceString = taskSourceToString(task.taskSource)
+
+        let snooze = SnoozedTask(
+            id: UUID(),
+            taskId: task.taskId,
+            taskSource: sourceString,
+            snoozeUntil: duration.expirationDate,
+            createdAt: Date()
+        )
+
+        try await aiManager.storeSnooze(snooze)
+
+        // Update local state
+        let key = "\(sourceString):\(task.taskId)"
+        snoozedTaskIds.insert(key)
+    }
+
+    /// Load snoozed task IDs from database
+    func loadSnoozedTasks() async {
+        do {
+            snoozedTaskIds = try await aiManager.getActiveSnoozedTaskIds()
+        } catch {
+            print("Failed to load snoozed tasks: \(error)")
+        }
     }
 }
