@@ -22,6 +22,9 @@ class AuthManager: ObservableObject {
     /// Gmail service for fetching emails via Gmail API
     private(set) lazy var gmailService: GmailService = GmailService(auth: googleAuth)
 
+    /// Teams service for fetching chat messages via Microsoft Graph
+    private(set) lazy var teamsService: TeamsService = TeamsService(auth: microsoftAuth)
+
     init() {
         Task {
             await configure()
@@ -117,6 +120,37 @@ class AuthManager: ObservableObject {
     /// Fetch flagged and important emails from Outlook via Microsoft Graph
     func getOutlookEmails() async throws -> [Email] {
         try await outlookService.getFlaggedEmails()
+    }
+
+    // MARK: - Teams
+
+    /// Fetch recent/urgent Teams messages from Microsoft Graph
+    func getTeamsMessages() async throws -> [TeamsMessage] {
+        let rawMessages = try await teamsService.getRecentMessages()
+        return rawMessages.map { msg in
+            TeamsMessage(
+                id: msg.id,
+                chatId: "",  // Individual messages don't carry chatId in response
+                chatTopic: nil,
+                senderName: msg.from?.user?.displayName ?? "Unknown",
+                content: msg.body.content,
+                createdAt: parseISO8601Date(msg.createdDateTime),
+                isUrgent: msg.importance?.lowercased() == "urgent",
+                webUrl: nil  // Teams messages don't have direct web URLs
+            )
+        }
+    }
+
+    /// Parse ISO8601 date string to Date
+    private func parseISO8601Date(_ dateString: String) -> Date {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: dateString) {
+            return date
+        }
+        // Fallback without fractional seconds
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: dateString) ?? Date()
     }
 
     // MARK: - Gmail
