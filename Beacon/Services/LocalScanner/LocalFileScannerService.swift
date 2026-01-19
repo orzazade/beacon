@@ -1,5 +1,6 @@
 import Foundation
 import Yams
+import AsyncAlgorithms
 
 /// Service for scanning local git repositories and extracting GSD files
 /// Follows actor pattern from OllamaService and DatabaseService
@@ -12,6 +13,10 @@ actor LocalFileScannerService {
     private var isScanning = false
     private var lastScanTime: Date?
     private var discoveredProjects: [LocalProject] = []
+
+    // MARK: - Periodic Scanning
+    private var periodicScanTask: Task<Void, Never>?
+    private var isAppVisible: Bool = true
 
     // MARK: - Configuration
     private let config: LocalScannerConfig
@@ -48,6 +53,55 @@ actor LocalFileScannerService {
             throw LocalScannerError.scanInProgress
         }
         try await performScan()
+    }
+
+    // MARK: - Periodic Scanning
+
+    /// Start periodic background scanning
+    /// - Parameter isVisible: Closure that returns whether the app is currently visible
+    func startPeriodicScanning(isVisible: @escaping () -> Bool) {
+        stopPeriodicScanning()
+
+        periodicScanTask = Task {
+            for await _ in AsyncTimerSequence.repeating(every: config.scanInterval) {
+                // Check if task was cancelled
+                guard !Task.isCancelled else { break }
+
+                // Only scan when app is visible (save resources)
+                guard isVisible() else {
+                    print("[LocalScanner] Skipping scan - app not visible")
+                    continue
+                }
+
+                // Skip if already scanning
+                guard !isScanning else { continue }
+
+                do {
+                    try await performScan()
+                } catch {
+                    print("[LocalScanner] Periodic scan failed: \(error)")
+                }
+            }
+        }
+
+        print("[LocalScanner] Started periodic scanning (interval: \(config.scanInterval))")
+    }
+
+    /// Stop periodic background scanning
+    func stopPeriodicScanning() {
+        periodicScanTask?.cancel()
+        periodicScanTask = nil
+        print("[LocalScanner] Stopped periodic scanning")
+    }
+
+    /// Update visibility state (called when app appears/disappears)
+    func setAppVisible(_ visible: Bool) {
+        isAppVisible = visible
+    }
+
+    /// Check if periodic scanning is active
+    var isPeriodicScanningActive: Bool {
+        periodicScanTask != nil && !periodicScanTask!.isCancelled
     }
 
     // MARK: - Private Implementation
