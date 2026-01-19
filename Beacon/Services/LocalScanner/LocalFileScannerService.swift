@@ -389,72 +389,20 @@ actor LocalFileScannerService {
 
     // MARK: - Database Storage
 
-    /// Store a GSD document in the database
+    /// Store a GSD document as a BeaconItem
     private func storeGSDDocument(_ document: GSDDocument) async throws {
-        let externalId: String
-        if let phase = document.phaseName {
-            externalId = "\(document.projectName)/phases/\(phase)/\(document.path.lastPathComponent)"
-        } else {
-            externalId = "\(document.projectName)/\(document.path.lastPathComponent)"
-        }
-
-        let item = BeaconItem(
-            id: UUID(),
-            itemType: document.phaseName != nil ? "gsd_phase_file" : "gsd_file",
-            source: "local",
-            externalId: externalId,
-            title: "\(document.projectName) - \(document.fileType.rawValue)",
-            content: document.summary,
-            summary: document.summary,
-            metadata: [
-                "project": document.projectName,
-                "file_type": document.fileType.rawValue.lowercased(),
-                "path": document.path.path,
-                "phase": document.phaseName ?? ""
-            ],
-            embedding: nil,
-            createdAt: Date(),
-            updatedAt: Date(),
-            indexedAt: nil
-        )
-
+        let item = BeaconItem.from(gsdDocument: document)
         _ = try await databaseService.storeItem(item)
     }
 
-    /// Store a commit in the database
+    /// Store a commit as a BeaconItem
     private func storeCommit(_ commit: CommitInfo, project: String, repoPath: String) async throws {
-        for ticketId in commit.ticketIds {
-            let item = BeaconItem(
-                id: UUID(),
-                itemType: "commit",
-                source: "local",
-                externalId: "\(project)/\(commit.hash)",
-                title: "[\(ticketId)] \(commit.subject)",
-                content: commit.subject,
-                summary: "\(commit.author) committed \(commit.subject)",
-                metadata: [
-                    "project": project,
-                    "commit_hash": commit.hash,
-                    "ticket_id": ticketId,
-                    "author": commit.author,
-                    "repo_path": repoPath
-                ],
-                embedding: nil,
-                createdAt: commit.date,
-                updatedAt: commit.date,
-                indexedAt: nil
-            )
-
-            _ = try await databaseService.storeItem(item)
-        }
+        let item = BeaconItem.from(commit: commit, project: project, repoPath: repoPath)
+        _ = try await databaseService.storeItem(item)
     }
 
-    /// Mark items as inactive if their projects are no longer discovered
+    /// Mark items as inactive that are no longer in discovered paths
     private func markItemsInactive(notInPaths: Set<String>) async throws {
-        // This is a stub - in Plan 02, we'll implement database method for this
-        // For now, just log the paths that should be cleaned up
-        if !notInPaths.isEmpty {
-            print("[LocalScanner] Projects scanned: \(notInPaths.count)")
-        }
+        try await databaseService.markItemsInactive(source: "local", notInPaths: notInPaths)
     }
 }
