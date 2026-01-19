@@ -221,3 +221,110 @@ extension Array where Element == any UnifiedTask {
         map { BeaconItem.from(unifiedTask: $0) }
     }
 }
+
+// MARK: - Local Scanner Conversion
+
+extension BeaconItem {
+    /// Create a BeaconItem from a GSD document
+    /// - Parameters:
+    ///   - document: The parsed GSD document
+    ///   - project: Project name for the item
+    /// - Returns: A BeaconItem ready for database storage
+    static func from(gsdDocument document: GSDDocument) -> BeaconItem {
+        // Determine item type based on file location
+        let itemType = document.phaseName != nil ? "gsd_phase_file" : "gsd_file"
+
+        // Build external ID for upsert
+        let externalId: String
+        if let phaseName = document.phaseName {
+            externalId = "\(document.projectName)/phases/\(phaseName)/\(document.path.lastPathComponent)"
+        } else {
+            externalId = "\(document.projectName)/\(document.path.lastPathComponent)"
+        }
+
+        // Build title
+        let fileLabel = document.path.lastPathComponent.replacingOccurrences(of: ".md", with: "")
+        let title: String
+        if let phaseName = document.phaseName {
+            title = "\(document.projectName) - Phase \(phaseName) - \(fileLabel)"
+        } else {
+            title = "\(document.projectName) - \(fileLabel)"
+        }
+
+        // Build metadata
+        var metadata: [String: String] = [
+            "project": document.projectName,
+            "file_type": document.fileType.rawValue.lowercased(),
+            "path": document.path.path
+        ]
+
+        if let phaseName = document.phaseName {
+            metadata["phase"] = phaseName
+        }
+
+        // Include frontmatter in metadata if present
+        if let fm = document.frontmatter {
+            for (key, value) in fm {
+                metadata["fm_\(key)"] = value
+            }
+        }
+
+        return BeaconItem(
+            id: UUID(),
+            itemType: itemType,
+            source: "local",
+            externalId: externalId,
+            title: title,
+            content: document.summary,
+            summary: document.summary,
+            metadata: metadata,
+            embedding: nil,
+            createdAt: Date(),
+            updatedAt: Date(),
+            indexedAt: nil
+        )
+    }
+
+    /// Create a BeaconItem from a commit with ticket references
+    /// - Parameters:
+    ///   - commit: The commit info
+    ///   - project: Project name
+    ///   - repoPath: Path to the repository
+    /// - Returns: A BeaconItem ready for database storage
+    static func from(commit: CommitInfo, project: String, repoPath: String) -> BeaconItem {
+        // Use first ticket ID for title
+        let primaryTicket = commit.ticketIds.first ?? "unknown"
+
+        // Build content for embedding
+        let content = """
+            Commit: \(commit.subject)
+            Author: \(commit.author)
+            Tickets: \(commit.ticketIds.joined(separator: ", "))
+            Project: \(project)
+            """
+
+        // Build metadata
+        let metadata: [String: String] = [
+            "project": project,
+            "commit_hash": commit.hash,
+            "ticket_ids": commit.ticketIds.joined(separator: ","),
+            "author": commit.author,
+            "repo_path": repoPath
+        ]
+
+        return BeaconItem(
+            id: UUID(),
+            itemType: "commit",
+            source: "local",
+            externalId: "\(project)/\(commit.hash)",
+            title: "[\(primaryTicket)] \(commit.subject)",
+            content: content,
+            summary: "\(commit.author) committed: \(commit.subject)",
+            metadata: metadata,
+            embedding: nil,
+            createdAt: commit.date,
+            updatedAt: commit.date,
+            indexedAt: nil
+        )
+    }
+}
