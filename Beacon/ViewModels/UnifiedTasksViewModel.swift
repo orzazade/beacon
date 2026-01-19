@@ -66,6 +66,7 @@ class UnifiedTasksViewModel: ObservableObject {
         case .azureDevOps: return "azure_devops"
         case .outlook: return "outlook"
         case .gmail: return "gmail"
+        case .teams: return "teams"
         }
     }
 

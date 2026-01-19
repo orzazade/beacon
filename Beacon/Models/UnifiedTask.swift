@@ -6,6 +6,7 @@ enum TaskSource: String, CaseIterable, Hashable {
     case azureDevOps = "Azure DevOps"
     case outlook = "Outlook"
     case gmail = "Gmail"
+    case teams = "Teams"
 
     /// SF Symbol name for source badge
     var icon: String {
@@ -13,6 +14,7 @@ enum TaskSource: String, CaseIterable, Hashable {
         case .azureDevOps: return "ladybug.fill"
         case .outlook: return "envelope.fill"
         case .gmail: return "envelope.badge.fill"
+        case .teams: return "bubble.left.and.bubble.right.fill"
         }
     }
 }

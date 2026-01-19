@@ -154,6 +154,8 @@ extension BeaconItem {
             sourceString = "outlook"
         case .gmail:
             sourceString = "gmail"
+        case .teams:
+            sourceString = "teams"
         }
 
         // Determine item type
@@ -163,6 +165,8 @@ extension BeaconItem {
             itemType = "task"
         case .outlook, .gmail:
             itemType = "email"
+        case .teams:
+            itemType = "message"
         }
 
         // Build metadata

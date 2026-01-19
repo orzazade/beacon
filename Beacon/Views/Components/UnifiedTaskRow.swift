@@ -47,6 +47,7 @@ struct UnifiedTaskRow: View {
         case .azureDevOps: return .blue
         case .outlook: return .teal
         case .gmail: return .red
+        case .teams: return .purple
         }
     }
 }

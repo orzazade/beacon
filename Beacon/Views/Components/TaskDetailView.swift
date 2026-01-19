@@ -241,6 +241,8 @@ struct TaskDetailView: View {
             return "Open in Outlook"
         case .gmail:
             return "Open in Gmail"
+        case .teams:
+            return "Open in Teams"
         }
     }
 
@@ -269,6 +271,7 @@ struct TaskDetailView: View {
         case .azureDevOps: return .blue
         case .outlook: return .teal
         case .gmail: return .red
+        case .teams: return .purple
         }
     }
 
