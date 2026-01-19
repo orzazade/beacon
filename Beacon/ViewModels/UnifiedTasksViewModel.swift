@@ -28,8 +28,11 @@ class UnifiedTasksViewModel: ObservableObject {
     /// Whether background embedding is in progress
     @Published var isEmbeddingInProgress = false
 
+    /// Priority scores cache (keyed by BeaconItem UUID)
+    @Published var priorityScores: [UUID: PriorityScore] = [:]
+
     private let authManager: AuthManager
-    private let aiManager: AIManager
+    let aiManager: AIManager
 
     init(authManager: AuthManager, aiManager: AIManager = .shared) {
         self.authManager = authManager
@@ -84,6 +87,7 @@ class UnifiedTasksViewModel: ObservableObject {
         // Check DevOps config outside TaskGroup (async property)
         let isDevOpsConfigured = await authManager.isDevOpsConfigured
 
+        print("[Tasks] loadAllTasks: isMicrosoftSignedIn=\(authManager.isMicrosoftSignedIn), isGoogleSignedIn=\(authManager.isGoogleSignedIn), isDevOpsConfigured=\(isDevOpsConfigured)")
 
         // Use TaskGroup to fetch from all sources concurrently
         await withTaskGroup(of: Result<[any UnifiedTask], Error>.self) { group in
@@ -91,9 +95,12 @@ class UnifiedTasksViewModel: ObservableObject {
             if authManager.isMicrosoftSignedIn && isDevOpsConfigured {
                 group.addTask { [authManager] in
                     do {
+                        print("[Tasks] Fetching Azure DevOps work items...")
                         let workItems = try await authManager.getMyWorkItems()
+                        print("[Tasks] Azure DevOps: fetched \(workItems.count) items")
                         return .success(workItems)
                     } catch {
+                        print("[Tasks] Azure DevOps fetch failed: \(error)")
                         return .failure(error)
                     }
                 }
@@ -103,9 +110,12 @@ class UnifiedTasksViewModel: ObservableObject {
             if authManager.isMicrosoftSignedIn {
                 group.addTask { [authManager] in
                     do {
+                        print("[Tasks] Fetching Outlook emails...")
                         let emails = try await authManager.getOutlookEmails()
+                        print("[Tasks] Outlook: fetched \(emails.count) items")
                         return .success(emails)
                     } catch {
+                        print("[Tasks] Outlook fetch failed: \(error)")
                         return .failure(error)
                     }
                 }
@@ -115,7 +125,9 @@ class UnifiedTasksViewModel: ObservableObject {
             if authManager.isMicrosoftSignedIn {
                 group.addTask { [authManager] in
                     do {
+                        print("[Tasks] Fetching Teams messages...")
                         let messages = try await authManager.getTeamsMessages()
+                        print("[Tasks] Teams: fetched \(messages.count) items")
                         return .success(messages.map { $0 as any UnifiedTask })
                     } catch {
                         print("[Tasks] Teams fetch failed: \(error)")
@@ -128,9 +140,12 @@ class UnifiedTasksViewModel: ObservableObject {
             if authManager.isGoogleSignedIn {
                 group.addTask { [authManager] in
                     do {
+                        print("[Tasks] Fetching Gmail emails...")
                         let emails = try await authManager.getGmailEmails()
+                        print("[Tasks] Gmail: fetched \(emails.count) items")
                         return .success(emails)
                     } catch {
+                        print("[Tasks] Gmail fetch failed: \(error)")
                         return .failure(error)
                     }
                 }
@@ -146,6 +161,8 @@ class UnifiedTasksViewModel: ObservableObject {
                 }
             }
         }
+
+        print("[Tasks] Total tasks loaded: \(allTasks.count), errors: \(errors)")
 
         // Sort by priority (urgent first), then by date (newest first)
         tasks = allTasks.sorted { task1, task2 in
@@ -179,6 +196,9 @@ class UnifiedTasksViewModel: ObservableObject {
 
             // Trigger background embedding generation
             await processEmbeddingsInBackground()
+
+            // Load priority scores after persistence
+            await loadPriorityScores()
         } catch {
             // Database persistence failure shouldn't affect UI
             print("Failed to persist tasks to database: \(error)")
