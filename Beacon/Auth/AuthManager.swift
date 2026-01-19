@@ -1,13 +1,38 @@
 import Foundation
 import SwiftUI
 
+import os.log
+
+private let logger = Logger(subsystem: "com.scifi.beacon", category: "auth")
+
+/// Debug logging using os.log
+func debugLog(_ message: String) {
+    logger.info("\(message, privacy: .public)")
+    print("[Beacon] \(message)")
+}
+
 @MainActor
 class AuthManager: ObservableObject {
     @Published var isMicrosoftSignedIn = false
+    @Published var isDevOpsAuthorized = false
     @Published var isGoogleSignedIn = false
     @Published var googleUserEmail: String?
     @Published var isLoading = false
     @Published var error: String?
+
+    // MARK: - Local Scanner State
+
+    /// Local file scanner service for GSD and git integration
+    private(set) var localScanner: LocalFileScannerService?
+
+    /// Whether a local scan is in progress
+    @Published var isLocalScanInProgress = false
+
+    /// Number of local projects discovered
+    @Published var localProjectCount = 0
+
+    /// Time of last local scan
+    @Published var lastLocalScanTime: Date?
 
     private let tokenStore = TokenStore()
     private lazy var microsoftAuth = MicrosoftAuth(tokenStore: tokenStore)
@@ -26,8 +51,11 @@ class AuthManager: ObservableObject {
     private(set) lazy var teamsService: TeamsService = TeamsService(auth: microsoftAuth)
 
     init() {
+        debugLog("[AuthManager] init() called")
         Task {
+            debugLog("[AuthManager] Starting configure()...")
             await configure()
+            debugLog("[AuthManager] configure() completed")
         }
     }
 
@@ -38,8 +66,24 @@ class AuthManager: ObservableObject {
                 clientId: Secrets.msalClientId,
                 tenantId: Secrets.msalTenantId
             )
-            isMicrosoftSignedIn = await microsoftAuth.isSignedIn
+            let msalSignedIn = await microsoftAuth.isSignedIn
+            debugLog("[AuthManager] MSAL isSignedIn: \(msalSignedIn)")
+
+            // Check TokenStore for saved account ID as fallback
+            if let savedAccountId = try? await tokenStore.retrieve(.microsoftAccountId), !savedAccountId.isEmpty {
+                debugLog("[AuthManager] Found saved Microsoft account ID: \(savedAccountId)")
+            } else {
+                debugLog("[AuthManager] No saved Microsoft account ID found")
+            }
+
+            isMicrosoftSignedIn = msalSignedIn
+
+            // Check DevOps authorization if signed in
+            if msalSignedIn {
+                await checkDevOpsAuthorization()
+            }
         } catch {
+            debugLog("[AuthManager] Microsoft configure error: \(error)")
             self.error = "Failed to configure Microsoft auth: \(error.localizedDescription)"
         }
 
@@ -69,6 +113,8 @@ class AuthManager: ObservableObject {
         do {
             _ = try await microsoftAuth.signIn()
             isMicrosoftSignedIn = true
+            // Check if DevOps is already authorized
+            await checkDevOpsAuthorization()
         } catch {
             self.error = "Microsoft sign-in failed: \(error.localizedDescription)"
         }
@@ -91,6 +137,31 @@ class AuthManager: ObservableObject {
 
     func getAzureDevOpsToken() async throws -> String {
         try await microsoftAuth.acquireDevOpsToken()
+    }
+
+    /// Grant consent for Azure DevOps access (opens browser)
+    func authorizeDevOps() async {
+        isLoading = true
+        error = nil
+
+        do {
+            try await microsoftAuth.consentToDevOps()
+            isDevOpsAuthorized = true
+        } catch {
+            self.error = "DevOps authorization failed: \(error.localizedDescription)"
+        }
+
+        isLoading = false
+    }
+
+    /// Check if DevOps token can be acquired silently
+    func checkDevOpsAuthorization() async {
+        do {
+            _ = try await microsoftAuth.acquireDevOpsToken()
+            isDevOpsAuthorized = true
+        } catch {
+            isDevOpsAuthorized = false
+        }
     }
 
     // MARK: - Azure DevOps
@@ -209,5 +280,95 @@ class AuthManager: ObservableObject {
 
     func getGmailToken() async throws -> String {
         try await googleAuth.getAccessToken()
+    }
+
+    // MARK: - Local Scanner
+
+    /// Initialize the local file scanner
+    /// - Parameters:
+    ///   - databaseService: Database service for storage
+    ///   - aiManager: AI manager for embeddings
+    func initializeLocalScanner(databaseService: DatabaseService, aiManager: AIManager) {
+        // Build config from UserDefaults
+        let projectsRoot = UserDefaults.standard.string(forKey: "localScannerProjectsRoot")
+            .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: "Projects")
+
+        let excludedProjectsString = UserDefaults.standard.string(forKey: "localScannerExcludedProjects") ?? ""
+        let excludedProjects = Set(
+            excludedProjectsString.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        )
+
+        let scanIntervalMinutes = UserDefaults.standard.integer(forKey: "localScannerIntervalMinutes")
+        let scanInterval = Duration.seconds(scanIntervalMinutes > 0 ? scanIntervalMinutes * 60 : 900)
+
+        let config = LocalScannerConfig(
+            projectsRoot: projectsRoot,
+            excludedProjects: excludedProjects,
+            scanInterval: scanInterval,
+            maxProjects: 20,
+            ticketPattern: "AB#\\d+"
+        )
+
+        localScanner = LocalFileScannerService(
+            config: config,
+            databaseService: databaseService,
+            aiManager: aiManager
+        )
+
+        debugLog("[AuthManager] Local scanner initialized with root: \(projectsRoot.path)")
+    }
+
+    /// Start periodic local scanning
+    func startLocalScanning() {
+        guard let scanner = localScanner else { return }
+
+        Task {
+            await scanner.startPeriodicScanning { [weak self] in
+                // Always return true for now - scanner will run when app is visible
+                return true
+            }
+        }
+    }
+
+    /// Stop periodic local scanning
+    func stopLocalScanning() {
+        guard let scanner = localScanner else { return }
+
+        Task {
+            await scanner.stopPeriodicScanning()
+        }
+    }
+
+    /// Trigger manual local scan
+    func triggerLocalScan() {
+        guard let scanner = localScanner else { return }
+
+        Task { @MainActor in
+            isLocalScanInProgress = true
+
+            do {
+                try await scanner.scanNow()
+                lastLocalScanTime = await scanner.lastScanDate
+                localProjectCount = await scanner.projectCount
+            } catch {
+                debugLog("[AuthManager] Local scan failed: \(error)")
+            }
+
+            isLocalScanInProgress = false
+        }
+    }
+
+    /// Update scanner state from scanner actor
+    func updateScannerState() async {
+        guard let scanner = localScanner else { return }
+
+        await MainActor.run {
+            Task {
+                isLocalScanInProgress = await scanner.isScanInProgress
+                lastLocalScanTime = await scanner.lastScanDate
+                localProjectCount = await scanner.projectCount
+            }
+        }
     }
 }
