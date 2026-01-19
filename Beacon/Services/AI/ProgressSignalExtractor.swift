@@ -233,7 +233,7 @@ actor ProgressSignalExtractor {
                 type: signal.type,
                 weight: signal.weight * 1.2, // Subject line boost
                 source: signal.source,
-                description: signal.description,
+                context: signal.context,
                 detectedAt: signal.detectedAt,
                 relatedItemId: signal.relatedItemId
             )
@@ -252,7 +252,7 @@ actor ProgressSignalExtractor {
                 type: .activity,
                 weight: 0.7,
                 source: "email",
-                description: "Reply chain indicates ongoing activity",
+                context: "Reply chain indicates ongoing activity",
                 relatedItemId: email.id
             ))
         }
@@ -263,7 +263,7 @@ actor ProgressSignalExtractor {
                 type: .escalation,
                 weight: 0.5,
                 source: "email",
-                description: "Forwarded email may indicate escalation or sharing",
+                context: "Forwarded email may indicate escalation or sharing",
                 relatedItemId: email.id
             ))
         }
@@ -290,7 +290,7 @@ actor ProgressSignalExtractor {
                 type: .activity,
                 weight: 1.3, // Commits have high credibility
                 source: "commit",
-                description: extractContext(from: message, around: normalizedMessage.range(of: "wip") ?? message.startIndex..<message.endIndex),
+                context: extractContext(from: message, around: normalizedMessage.range(of: "wip") ?? message.startIndex..<message.endIndex),
                 relatedItemId: relatedItemId
             ))
         }
@@ -303,7 +303,7 @@ actor ProgressSignalExtractor {
                     type: .completion,
                     weight: 1.3,
                     source: "commit",
-                    description: extractContext(from: message, around: message.startIndex..<message.index(message.startIndex, offsetBy: min(50, message.count))),
+                    context: extractContext(from: message, around: message.startIndex..<message.index(message.startIndex, offsetBy: min(50, message.count))),
                     relatedItemId: relatedItemId
                 ))
                 break // Only add once
@@ -344,7 +344,7 @@ actor ProgressSignalExtractor {
                 type: .activity,
                 weight: 0.9,
                 source: "teams_message",
-                description: "Direct mention indicates engagement",
+                context: "Direct mention indicates engagement",
                 relatedItemId: messageId
             ))
         }
@@ -357,7 +357,7 @@ actor ProgressSignalExtractor {
                     type: .blocker,
                     weight: 0.6, // Lower weight - questions are ambiguous
                     source: "teams_message",
-                    description: questionContext,
+                    context: questionContext,
                     relatedItemId: messageId
                 ))
             }
@@ -385,7 +385,7 @@ actor ProgressSignalExtractor {
                 type: .commitment,
                 weight: 0.8,
                 source: "file_change",
-                description: "New file created: \(fileName)",
+                context: "New file created: \(fileName)",
                 relatedItemId: relatedItemId
             ))
         }
@@ -396,7 +396,7 @@ actor ProgressSignalExtractor {
                 type: .activity,
                 weight: 0.7,
                 source: "file_change",
-                description: "File modified: \(fileName)",
+                context: "File modified: \(fileName)",
                 relatedItemId: relatedItemId
             ))
         }
@@ -407,7 +407,7 @@ actor ProgressSignalExtractor {
                 type: .activity,
                 weight: 0.5,
                 source: "file_change",
-                description: "File removed: \(fileName)",
+                context: "File removed: \(fileName)",
                 relatedItemId: relatedItemId
             ))
         }
@@ -448,7 +448,7 @@ actor ProgressSignalExtractor {
                         type: signalType,
                         weight: weight,
                         source: source,
-                        description: context,
+                        context: context,
                         relatedItemId: relatedItemId
                     ))
                 }
@@ -547,7 +547,7 @@ actor ProgressSignalExtractor {
                     type: signal.type,
                     weight: signal.weight * recencyBoost,
                     source: signal.source,
-                    description: signal.description,
+                    context: signal.context,
                     detectedAt: signal.detectedAt,
                     relatedItemId: signal.relatedItemId
                 )

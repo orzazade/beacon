@@ -60,14 +60,67 @@ enum ProgressState: String, Codable, CaseIterable {
     }
 }
 
-// MARK: - Progress Signal Types
+// MARK: - Progress Signal Type (Extraction)
 
-/// Types of signals that indicate progress state
-enum ProgressSignalType: String, Codable {
+/// Types of progress signals detected from various sources
+/// Used by ProgressSignalExtractor for pattern-based extraction
+enum ProgressSignalType: String, Codable, CaseIterable {
+    case commitment = "commitment"    // Planning/assignment signals
+    case activity = "activity"        // Active work signals
+    case blocker = "blocker"          // Blocking signals
+    case completion = "completion"    // Done signals
+    case escalation = "escalation"    // Urgency signals
+
+    /// Default weight contribution
+    var defaultWeight: Float {
+        switch self {
+        case .completion: return 0.40
+        case .blocker: return 0.30
+        case .activity: return 0.20
+        case .commitment: return 0.10
+        case .escalation: return 0.10
+        }
+    }
+}
+
+// MARK: - Progress Signal (Extraction)
+
+/// A detected progress signal from content analysis
+/// Used by ProgressSignalExtractor for pattern-based extraction
+struct ProgressSignal: Codable, Equatable {
+    let type: ProgressSignalType
+    let weight: Float
+    let source: String              // "email", "commit", "teams", "file"
+    let context: String             // Text snippet around the match
+    let detectedAt: Date
+    let relatedItemId: String?      // Related ticket/item ID if detected
+
+    init(
+        type: ProgressSignalType,
+        weight: Float? = nil,
+        source: String,
+        context: String,
+        detectedAt: Date = Date(),
+        relatedItemId: String? = nil
+    ) {
+        self.type = type
+        self.weight = weight ?? type.defaultWeight
+        self.source = source
+        self.context = context
+        self.detectedAt = detectedAt
+        self.relatedItemId = relatedItemId
+    }
+}
+
+// MARK: - Progress Score Signal Type (Storage)
+
+/// Types of signals that indicate progress state for scoring
+/// Used for storage in ProgressScore after extraction
+enum ProgressScoreSignalType: String, Codable {
     case commitment = "commitment"   // "will do", "planning to", "assigned to me"
     case activity = "activity"       // "working on", "updated", "pushed", "sent"
-    case blocker = "blocker"         // "blocked by", "waiting on", "dependency", "need X first"
-    case completion = "completion"   // "completed", "merged", "resolved", "done", "closed"
+    case blocker = "blocker"         // "blocked by", "waiting on", "dependency"
+    case completion = "completion"   // "completed", "merged", "resolved", "done"
     case escalation = "escalation"   // "urgent", "ASAP", "bumping this"
 
     /// Default weight contribution to final state determination
@@ -83,11 +136,12 @@ enum ProgressSignalType: String, Codable {
     }
 }
 
-// MARK: - Progress Signal
+// MARK: - Progress Score Signal
 
 /// A detected signal contributing to progress state inference
-struct ProgressSignal: Codable, Equatable {
-    let type: ProgressSignalType
+/// Used for storage and display of signals that contributed to a ProgressScore
+struct ProgressScoreSignal: Codable, Equatable {
+    let type: ProgressScoreSignalType
     let weight: Float
     let source: String          // Where detected: "email", "commit", "teams_message", "file_change"
     let description: String     // Extracted text/context
@@ -95,7 +149,7 @@ struct ProgressSignal: Codable, Equatable {
     let relatedItemId: String?  // Link to source item (email ID, commit hash, etc.)
 
     init(
-        type: ProgressSignalType,
+        type: ProgressScoreSignalType,
         weight: Float? = nil,
         source: String,
         description: String,
@@ -109,6 +163,31 @@ struct ProgressSignal: Codable, Equatable {
         self.detectedAt = detectedAt
         self.relatedItemId = relatedItemId
     }
+
+    /// Convert from ProgressSignal (from ProgressSignalExtractor)
+    init(from signal: ProgressSignal) {
+        // Map ProgressSignalType to ProgressScoreSignalType
+        let mappedType: ProgressScoreSignalType
+        switch signal.type {
+        case .commitment:
+            mappedType = .commitment
+        case .activity:
+            mappedType = .activity
+        case .blocker:
+            mappedType = .blocker
+        case .completion:
+            mappedType = .completion
+        case .escalation:
+            mappedType = .escalation
+        }
+
+        self.type = mappedType
+        self.weight = signal.weight
+        self.source = signal.source
+        self.description = signal.context
+        self.detectedAt = signal.detectedAt
+        self.relatedItemId = signal.relatedItemId
+    }
 }
 
 // MARK: - Progress Score
@@ -120,7 +199,7 @@ struct ProgressScore: Codable, Identifiable {
     let state: ProgressState
     let confidence: Float           // 0.0 to 1.0
     let reasoning: String           // AI explanation
-    let signals: [ProgressSignal]   // All detected signals
+    let signals: [ProgressScoreSignal]   // All detected signals
     let isManualOverride: Bool
     let inferredAt: Date
     let lastActivityAt: Date?       // Most recent activity signal
@@ -132,7 +211,7 @@ struct ProgressScore: Codable, Identifiable {
         state: ProgressState,
         confidence: Float,
         reasoning: String,
-        signals: [ProgressSignal],
+        signals: [ProgressScoreSignal],
         isManualOverride: Bool = false,
         inferredAt: Date = Date(),
         lastActivityAt: Date? = nil,
@@ -188,14 +267,14 @@ struct ProgressStateMachine {
     /// Priority: completion > blocker > activity > commitment
     /// - Parameter signals: Array of progress signals
     /// - Returns: Tuple of (state, confidence, reasoning)
-    static func determineState(from signals: [ProgressSignal]) -> (ProgressState, Float, String) {
+    static func determineState(from signals: [ProgressScoreSignal]) -> (ProgressState, Float, String) {
         guard !signals.isEmpty else {
             return (.notStarted, 0.5, "No progress signals detected")
         }
 
         // Count signals by type
-        var typeCounts: [ProgressSignalType: Int] = [:]
-        var typeWeights: [ProgressSignalType: Float] = [:]
+        var typeCounts: [ProgressScoreSignalType: Int] = [:]
+        var typeWeights: [ProgressScoreSignalType: Float] = [:]
 
         for signal in signals {
             typeCounts[signal.type, default: 0] += 1
@@ -233,5 +312,12 @@ struct ProgressStateMachine {
         }
 
         return (.notStarted, 0.5, "Insufficient signals to determine progress state")
+    }
+
+    /// Determine progress state from ProgressSignal array (from ProgressSignalExtractor)
+    /// Converts to ProgressScoreSignal internally
+    static func determineState(from extractedSignals: [ProgressSignal]) -> (ProgressState, Float, String) {
+        let scoreSignals = extractedSignals.map { ProgressScoreSignal(from: $0) }
+        return determineState(from: scoreSignals)
     }
 }
