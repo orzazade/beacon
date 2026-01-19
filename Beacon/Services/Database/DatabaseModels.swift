@@ -379,3 +379,104 @@ extension BeaconItem {
         calculateAgeEscalationBoost(from: createdAt)
     }
 }
+
+// MARK: - Progress Analysis Extension
+
+extension BeaconItem {
+    /// Key for storing manual progress override in metadata
+    static let progressOverrideKey = "manual_progress"
+
+    /// Check if this item has a manual progress override
+    var hasManualProgressOverride: Bool {
+        metadata?[Self.progressOverrideKey] != nil
+    }
+
+    /// Get manual progress override from metadata if set
+    var manualProgressOverride: ProgressState? {
+        guard let stateStr = metadata?[Self.progressOverrideKey] else { return nil }
+        return ProgressState(from: stateStr)
+    }
+
+    /// Check if item needs progress analysis
+    /// Returns true if has priority score AND (never analyzed or updated since)
+    func needsProgressAnalysis(analyzedAt: Date?, hasPriorityScore: Bool) -> Bool {
+        guard hasPriorityScore else { return false }
+        guard let analyzedAt = analyzedAt else { return true }
+        return updatedAt > analyzedAt
+    }
+
+    /// Extract ticket IDs for cross-source correlation
+    /// Looks for patterns like: ABC-123, #123, PROJ-456, 12345 (5+ digits)
+    var extractedTicketIds: [String] {
+        let patterns = [
+            "[A-Z]{2,}-\\d+",  // JIRA-style: ABC-123
+            "#\\d+",           // GitHub-style: #123
+            "\\d{5,}"          // Work item ID: 12345
+        ]
+
+        var ids: [String] = []
+        let searchText = (title + " " + (content ?? "")).uppercased()
+
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern) {
+                let matches = regex.matches(in: searchText, range: NSRange(searchText.startIndex..., in: searchText))
+                ids.append(contentsOf: matches.compactMap { match in
+                    Range(match.range, in: searchText).map { String(searchText[$0]) }
+                })
+            }
+        }
+
+        return Array(Set(ids)) // Deduplicate
+    }
+
+    /// Extract potential progress signals from content
+    /// Returns tuples of (signalType, matched text)
+    var extractedProgressSignals: [(ProgressSignalType, String)] {
+        guard let content = content else { return [] }
+        let searchText = content.lowercased()
+
+        var signals: [(ProgressSignalType, String)] = []
+
+        // Completion signals
+        let completionKeywords = ["completed", "done", "finished", "merged", "resolved", "closed", "fixed"]
+        for keyword in completionKeywords {
+            if searchText.contains(keyword) {
+                signals.append((.completion, keyword))
+            }
+        }
+
+        // Blocker signals
+        let blockerKeywords = ["blocked", "waiting on", "waiting for", "dependency", "need", "stuck", "can't proceed"]
+        for keyword in blockerKeywords {
+            if searchText.contains(keyword) {
+                signals.append((.blocker, keyword))
+            }
+        }
+
+        // Activity signals
+        let activityKeywords = ["working on", "updated", "pushed", "sent", "submitted", "reviewed", "tested"]
+        for keyword in activityKeywords {
+            if searchText.contains(keyword) {
+                signals.append((.activity, keyword))
+            }
+        }
+
+        // Commitment signals
+        let commitmentKeywords = ["will do", "planning to", "assigned to me", "taking this", "i'll handle"]
+        for keyword in commitmentKeywords {
+            if searchText.contains(keyword) {
+                signals.append((.commitment, keyword))
+            }
+        }
+
+        // Escalation signals
+        let escalationKeywords = ["urgent", "asap", "critical", "high priority", "bumping", "reminder"]
+        for keyword in escalationKeywords {
+            if searchText.contains(keyword) {
+                signals.append((.escalation, keyword))
+            }
+        }
+
+        return signals
+    }
+}
