@@ -52,54 +52,8 @@ actor BriefingService {
     If a section has no items, use an empty array [].
     """
 
-    // JSON Schema for structured output
-    private var briefingSchema: [String: AnyCodableValue] {
-        .object(properties: [
-            "greeting": .stringType,
-            "urgentItems": .arrayOf(.object(
-                properties: [
-                    "title": .stringType,
-                    "reason": .stringType,
-                    "source": .stringType,
-                    "itemId": .dictionary(["type": .string("string")])
-                ],
-                required: ["title", "reason", "source"]
-            )),
-            "blockedItems": .arrayOf(.object(
-                properties: [
-                    "title": .stringType,
-                    "blockedBy": .stringType,
-                    "suggestedAction": .dictionary(["type": .string("string")]),
-                    "itemId": .dictionary(["type": .string("string")])
-                ],
-                required: ["title", "blockedBy"]
-            )),
-            "staleItems": .arrayOf(.object(
-                properties: [
-                    "title": .stringType,
-                    "daysSinceActivity": .integerType,
-                    "suggestion": .dictionary(["type": .string("string")]),
-                    "itemId": .dictionary(["type": .string("string")])
-                ],
-                required: ["title", "daysSinceActivity"]
-            )),
-            "upcomingDeadlines": .arrayOf(.object(
-                properties: [
-                    "title": .stringType,
-                    "dueDate": .stringType,
-                    "daysRemaining": .integerType,
-                    "itemId": .dictionary(["type": .string("string")])
-                ],
-                required: ["title", "dueDate", "daysRemaining"]
-            )),
-            "focusAreas": .arrayOf(.stringType),
-            "closingNote": .stringType,
-            "generatedAt": .stringType
-        ], required: [
-            "greeting", "urgentItems", "blockedItems", "staleItems",
-            "upcomingDeadlines", "focusAreas", "closingNote", "generatedAt"
-        ])
-    }
+    // Note: JSON Schema for structured output is defined in the system prompt.
+    // We use text-based JSON parsing for flexibility across models.
 
     init(
         database: DatabaseService = DatabaseService(),
@@ -179,8 +133,7 @@ actor BriefingService {
                 )
             },
             deadlineItems: deadlines.map { item, dueDate in
-                var inputItem = convertToInputItem(item)
-                return BriefingInputData.BriefingInputItem(
+                BriefingInputData.BriefingInputItem(
                     id: item.id,
                     title: item.title,
                     source: item.source,
