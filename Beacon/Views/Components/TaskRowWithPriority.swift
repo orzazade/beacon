@@ -7,6 +7,7 @@ struct TaskRowWithPriority: View {
     let progressScore: ProgressScore?
     let onPriorityOverride: (AIPriorityLevel) -> Void
     let onProgressOverride: (ProgressState) -> Void
+    var onClearProgressOverride: (() -> Void)?
 
     @State private var isHovering = false
     @State private var showingPriorityReasoning = false
@@ -150,11 +151,10 @@ struct TaskRowWithPriority: View {
             }
         }
 
-        if progressScore?.isManualOverride == true {
+        if progressScore?.isManualOverride == true, let clearAction = onClearProgressOverride {
             Divider()
             Button("Clear Manual Override") {
-                // Re-trigger AI analysis
-                // The pipeline will re-analyze on next run
+                clearAction()
             }
         }
     }
