@@ -70,6 +70,15 @@ struct ContentView: View {
 
             // Start periodic scanning
             authManager.startLocalScanning()
+
+            // Set up briefing callback for tab switching
+            appState.setupBriefingCallback()
+
+            // Start briefing scheduler if enabled and OpenRouter configured
+            if AIManager.shared.isOpenRouterConfigured && BriefingSettings.shared.isEnabled {
+                debugLog("[ContentView] Starting briefing scheduler")
+                AIManager.shared.startBriefingScheduler()
+            }
         }
     }
 }
