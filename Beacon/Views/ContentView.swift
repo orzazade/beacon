@@ -6,6 +6,7 @@ struct ContentView: View {
     @EnvironmentObject var authManager: AuthManager
     @State private var showingSettings = false
     @State private var scannerInitialized = false
+    @State private var highlightedTaskId: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,8 +20,11 @@ struct ContentView: View {
                 SettingsContentView(showingSettings: $showingSettings)
                     .environmentObject(authManager)
             } else {
-                TabContentView(selectedTab: appState.selectedTab)
-                    .environmentObject(authManager)
+                TabContentView(
+                    selectedTab: $appState.selectedTab,
+                    highlightedTaskId: $highlightedTaskId
+                )
+                .environmentObject(authManager)
 
                 // Custom tab bar
                 CustomTabBar(selectedTab: $appState.selectedTab)
@@ -268,6 +272,9 @@ struct SettingsContentView: View {
                     }
                     .padding(.horizontal)
 
+                    // AI Services section
+                    AIServicesSettingsSection()
+
                     // Briefing section
                     BriefingSettingsSection()
 
@@ -310,7 +317,8 @@ struct SettingsContentView: View {
 
 /// View that displays the content for the selected tab
 struct TabContentView: View {
-    let selectedTab: Tab
+    @Binding var selectedTab: Tab
+    @Binding var highlightedTaskId: String?
     @EnvironmentObject var authManager: AuthManager
 
     var body: some View {
@@ -321,7 +329,7 @@ struct TabContentView: View {
             case .tasks:
                 TasksTab(authManager: authManager)
             case .chat:
-                ChatTab()
+                ChatTab(selectedTab: $selectedTab, highlightedTaskId: $highlightedTaskId)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -482,6 +490,234 @@ struct FooterView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+}
+
+/// Inline AI services settings section for popover settings
+struct AIServicesSettingsSection: View {
+    @StateObject private var viewModel = AIServicesInlineViewModel()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Section header
+            Text("AI Services")
+                .font(.headline)
+                .padding(.horizontal)
+                .padding(.top, 8)
+
+            // OpenRouter API
+            GroupBox {
+                VStack(spacing: 10) {
+                    // Status row
+                    HStack {
+                        Image(systemName: "brain")
+                            .foregroundColor(.purple)
+                            .font(.system(size: 16))
+
+                        VStack(alignment: .leading) {
+                            Text("OpenRouter API")
+                                .font(.subheadline)
+                            if viewModel.isOpenRouterConfigured {
+                                if let credits = viewModel.openRouterCredits {
+                                    Text("$\(credits, specifier: "%.2f") remaining")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                } else {
+                                    Text("Connected")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                }
+                            } else {
+                                Text("Not configured")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
+                        Spacer()
+
+                        Circle()
+                            .fill(viewModel.isOpenRouterConfigured ? Color.green : Color.red)
+                            .frame(width: 8, height: 8)
+                    }
+
+                    // API Key input or remove button
+                    if viewModel.isOpenRouterConfigured {
+                        Button("Remove API Key") {
+                            Task { await viewModel.removeAPIKey() }
+                        }
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .buttonStyle(.borderless)
+                    } else {
+                        HStack {
+                            SecureField("API Key", text: $viewModel.apiKeyInput)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.caption)
+
+                            Button("Save") {
+                                Task { await viewModel.saveAPIKey() }
+                            }
+                            .controlSize(.small)
+                            .disabled(viewModel.apiKeyInput.isEmpty || viewModel.isSaving)
+                        }
+
+                        Link("Get API key", destination: URL(string: "https://openrouter.ai/keys")!)
+                            .font(.caption2)
+                    }
+
+                    Divider()
+
+                    // Model picker
+                    HStack {
+                        Text("Model")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .frame(width: 50, alignment: .leading)
+
+                        Picker("", selection: $viewModel.selectedModel) {
+                            ForEach(OpenRouterModel.allCases, id: \.self) { model in
+                                HStack {
+                                    Text(model.displayName)
+                                    if model.isFree {
+                                        Text("FREE")
+                                            .font(.caption2)
+                                            .foregroundColor(.green)
+                                    }
+                                }
+                                .tag(model)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+            .padding(.horizontal)
+
+            // Database & Ollama status
+            GroupBox {
+                VStack(spacing: 8) {
+                    // Database status
+                    HStack {
+                        Image(systemName: "cylinder")
+                            .foregroundColor(.blue)
+                            .font(.system(size: 14))
+
+                        Text("Database")
+                            .font(.caption)
+
+                        Spacer()
+
+                        Circle()
+                            .fill(viewModel.isDatabaseConnected ? Color.green : Color.red)
+                            .frame(width: 6, height: 6)
+
+                        Text(viewModel.isDatabaseConnected ? "Connected" : "Not connected")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+
+                    // Ollama status
+                    HStack {
+                        Image(systemName: "desktopcomputer")
+                            .foregroundColor(.orange)
+                            .font(.system(size: 14))
+
+                        Text("Ollama")
+                            .font(.caption)
+
+                        Spacer()
+
+                        Circle()
+                            .fill(viewModel.isOllamaAvailable ? Color.green : Color.yellow)
+                            .frame(width: 6, height: 6)
+
+                        if viewModel.isOllamaAvailable {
+                            Text("v\(viewModel.ollamaVersion ?? "?")")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("Optional")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal)
+
+            // Error display
+            if let error = viewModel.error {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundColor(.red)
+                    .padding(.horizontal)
+            }
+        }
+        .onAppear {
+            Task { await viewModel.refresh() }
+        }
+    }
+}
+
+/// ViewModel for inline AI services settings
+@MainActor
+class AIServicesInlineViewModel: ObservableObject {
+    @Published var isOpenRouterConfigured = false
+    @Published var openRouterCredits: Double?
+    @Published var isDatabaseConnected = false
+    @Published var isOllamaAvailable = false
+    @Published var ollamaVersion: String?
+    @Published var apiKeyInput = ""
+    @Published var isSaving = false
+    @Published var error: String?
+
+    /// Selected default model - syncs to all AI settings
+    @Published var selectedModel: OpenRouterModel = .gemma2Free {
+        didSet {
+            // Sync to all settings
+            BriefingSettings.shared.selectedModel = selectedModel
+            PrioritySettings.shared.selectedModel = selectedModel
+            ProgressSettings.shared.selectedModel = selectedModel
+        }
+    }
+
+    func refresh() async {
+        let aiManager = AIManager.shared
+        isOpenRouterConfigured = aiManager.isOpenRouterConfigured
+        openRouterCredits = aiManager.openRouterCredits
+        isOllamaAvailable = aiManager.isOllamaAvailable
+        ollamaVersion = aiManager.ollamaVersion
+        isDatabaseConnected = await aiManager.isDatabaseConnected
+
+        // Load current model from briefing settings
+        selectedModel = BriefingSettings.shared.selectedModel
+    }
+
+    func saveAPIKey() async {
+        guard !apiKeyInput.isEmpty else { return }
+        isSaving = true
+        error = nil
+
+        do {
+            try await AIManager.shared.setOpenRouterAPIKey(apiKeyInput)
+            apiKeyInput = ""
+            await refresh()
+        } catch {
+            self.error = "Failed to save: \(error.localizedDescription)"
+        }
+
+        isSaving = false
+    }
+
+    func removeAPIKey() async {
+        do {
+            try await AIManager.shared.removeOpenRouterAPIKey()
+            await refresh()
+        } catch {
+            self.error = "Failed to remove: \(error.localizedDescription)"
+        }
     }
 }
 
