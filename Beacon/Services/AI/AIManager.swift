@@ -149,8 +149,13 @@ class AIManager: ObservableObject {
     }
 
     /// Get progress pipeline statistics
-    var progressPipelineStats: PipelineStatistics {
+    var progressPipelineStats: ProgressPipelineStatistics {
         progressPipeline.statistics
+    }
+
+    /// Configure daily token limit for progress analysis
+    func setProgressDailyLimit(_ limit: Int) {
+        progressPipeline.setDailyTokenLimit(limit)
     }
 
     /// Trigger immediate progress analysis
@@ -161,6 +166,11 @@ class AIManager: ObservableObject {
     /// Get progress score for an item
     func getProgressScore(for itemId: UUID) async throws -> ProgressScore? {
         try await database.getProgressScore(itemId: itemId)
+    }
+
+    /// Get progress scores for multiple items
+    func getProgressScores(for itemIds: [UUID]) async throws -> [ProgressScore] {
+        try await database.getProgressScores(itemIds: itemIds)
     }
 
     /// Manually set progress for an item (override AI)
@@ -176,6 +186,16 @@ class AIManager: ObservableObject {
             modelUsed: "manual"
         )
         try await database.storeProgressScore(score)
+    }
+
+    /// Get items by progress state
+    func getItemsByProgressState(_ state: ProgressState, limit: Int = 50) async throws -> [(BeaconItem, ProgressScore)] {
+        try await database.getItemsWithProgress(state: state, limit: limit)
+    }
+
+    /// Get stale items (in progress but no activity for threshold)
+    func getStaleItems() async throws -> [UUID] {
+        try await database.getStaleItems(threshold: ProgressSettings.shared.stalenessThresholdSeconds)
     }
 
     // MARK: - Embeddings
