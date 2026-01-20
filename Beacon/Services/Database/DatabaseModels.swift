@@ -166,7 +166,7 @@ extension BeaconItem {
         case .outlook, .gmail:
             itemType = "email"
         case .teams:
-            itemType = "message"
+            itemType = "teams"  // Must match DB constraint: 'task', 'email', 'calendar', 'teams', 'file'
         }
 
         // Build metadata
