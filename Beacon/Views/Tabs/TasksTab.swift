@@ -181,10 +181,11 @@ struct TasksTab: View {
 
     private var taskListView: some View {
         VStack(spacing: 0) {
-            // Filter chips
+            // Filter chips with source, priority, and progress filters
             FilterChips(
                 selectedSources: $viewModel.selectedSources,
-                selectedPriorities: $viewModel.selectedPriorities
+                selectedPriorities: $viewModel.selectedPriorities,
+                selectedProgressStates: $viewModel.selectedProgressStates
             )
             .padding(.vertical, 8)
 

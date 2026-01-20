@@ -140,8 +140,66 @@ struct PriorityFilterChips: View {
     }
 }
 
-/// Combined filter chips view with source and priority rows
+/// Horizontal scrolling row of progress filter chips
+struct ProgressFilterChips: View {
+    @Binding var selectedProgressStates: Set<ProgressState>
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(ProgressState.allCases, id: \.self) { state in
+                    FilterChip(
+                        item: state,
+                        label: state.displayName,
+                        icon: state.iconName,
+                        color: state.color,
+                        isSelected: isSelected(state),
+                        action: { toggle(state) }
+                    )
+                }
+            }
+            .padding(.horizontal, 8)
+        }
+    }
+
+    /// Empty selection means "show all"
+    private func isSelected(_ state: ProgressState) -> Bool {
+        selectedProgressStates.isEmpty || selectedProgressStates.contains(state)
+    }
+
+    private func toggle(_ state: ProgressState) {
+        if selectedProgressStates.isEmpty {
+            // First selection: select only this one
+            selectedProgressStates = [state]
+        } else if selectedProgressStates.contains(state) {
+            selectedProgressStates.remove(state)
+        } else {
+            selectedProgressStates.insert(state)
+            // If all are selected, clear to "show all" state
+            if selectedProgressStates.count == ProgressState.allCases.count {
+                selectedProgressStates.removeAll()
+            }
+        }
+    }
+}
+
+/// Combined filter chips view with source, priority, and progress rows
 struct FilterChips: View {
+    @Binding var selectedSources: Set<TaskSource>
+    @Binding var selectedPriorities: Set<TaskPriority>
+    @Binding var selectedProgressStates: Set<ProgressState>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SourceFilterChips(selectedSources: $selectedSources)
+            PriorityFilterChips(selectedPriorities: $selectedPriorities)
+            ProgressFilterChips(selectedProgressStates: $selectedProgressStates)
+        }
+    }
+}
+
+/// Combined filter chips view with source and priority rows only (legacy)
+struct FilterChipsLegacy: View {
     @Binding var selectedSources: Set<TaskSource>
     @Binding var selectedPriorities: Set<TaskPriority>
 
@@ -159,6 +217,7 @@ struct FilterChips: View {
     struct PreviewWrapper: View {
         @State private var selectedSources: Set<TaskSource> = []
         @State private var selectedPriorities: Set<TaskPriority> = []
+        @State private var selectedProgressStates: Set<ProgressState> = []
 
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
@@ -174,11 +233,18 @@ struct FilterChips: View {
 
                 Divider()
 
+                Text("Progress Filters")
+                    .font(.headline)
+                ProgressFilterChips(selectedProgressStates: $selectedProgressStates)
+
+                Divider()
+
                 Text("Combined")
                     .font(.headline)
                 FilterChips(
                     selectedSources: $selectedSources,
-                    selectedPriorities: $selectedPriorities
+                    selectedPriorities: $selectedPriorities,
+                    selectedProgressStates: $selectedProgressStates
                 )
 
                 Spacer()
@@ -189,11 +255,13 @@ struct FilterChips: View {
                         .font(.caption)
                     Text("Selected Priorities: \(selectedPriorities.isEmpty ? "All" : selectedPriorities.map(\.rawValue).joined(separator: ", "))")
                         .font(.caption)
+                    Text("Selected Progress: \(selectedProgressStates.isEmpty ? "All" : selectedProgressStates.map(\.displayName).joined(separator: ", "))")
+                        .font(.caption)
                 }
                 .foregroundStyle(.secondary)
             }
             .padding()
-            .frame(width: 320, height: 300)
+            .frame(width: 400, height: 400)
         }
     }
 
