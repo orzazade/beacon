@@ -3,18 +3,18 @@
 ## Current Position
 
 Phase: 15 of 17 (Daily AI Briefing) - IN PROGRESS
-Plan: 1 of 3 in current phase (completed)
-Status: Plan 15-01 complete - ready for Plan 15-02 (UI)
-Last activity: 2026-01-20 - Completed Plan 15-01 (Briefing Models, Service, Scheduler)
+Plan: 3 of 3 in current phase (completed)
+Status: Plan 15-03 complete - Phase 15 complete, ready for Phase 16
+Last activity: 2026-01-20 - Completed Plan 15-03 (Settings and Integration)
 
-Progress: ██████████ 100% (Plan 15-01)
+Progress: ██████████ 100% (Phase 15 Complete)
 
 ## Active Milestone
 
 **v1.1 AI-Powered Work Assistant**
 - Phases: 8-17 (10 phases)
-- Completed: 7/10 (Phase 8 + Phase 9 + Phase 10 + Phase 11 + Phase 12 + Phase 13 + Phase 14)
-- In Progress: Phase 15 (Daily AI Briefing) - Plan 1 of 3 complete
+- Completed: 8/10 (Phase 8 + Phase 9 + Phase 10 + Phase 11 + Phase 12 + Phase 13 + Phase 14 + Phase 15)
+- Next: Phase 16 (AI Chat Interface)
 - Focus: Transform from task aggregator to intelligent work assistant
 - Key features: AI priority analysis, smart progress tracking, daily briefings
 
@@ -85,6 +85,13 @@ Progress: ██████████ 100% (Plan 15-01)
 - Text-based JSON parsing for flexibility across models
 - Fallback briefing when AI unavailable
 - Parallel data aggregation for performance
+
+**Phase 15 Decisions (Plan 15-03):**
+- Inline settings in popover (not separate navigation)
+- Schedule time range 5-11 AM for morning briefing
+- Auto-show Briefing tab before 10am when briefing generated
+- Scheduler lifecycle managed through AIManager singleton
+- Rate limiting feedback in settings UI
 
 ### Technical Notes
 
@@ -186,13 +193,17 @@ Progress: ██████████ 100% (Plan 15-01)
 - PrioritySettingsView.swift: Complete settings UI (model, VIP, cost tracking, daily limit, pipeline status)
 - PRIORITY_PIPELINE_INTEGRATION.md: Integration guide for UI team
 
-**Phase 15 Implementation (Daily AI Briefing - Plan 15-01):**
+**Phase 15 Implementation (Daily AI Briefing - Complete):**
 - Briefing.swift: Models (BriefingContent, section items, BriefingInputData, BriefingError)
 - 03-briefing-schema.sql: Database schema (beacon_briefings table, views, functions)
 - BriefingSettings.swift: UserDefaults-backed settings singleton (schedule, cache, model, notifications)
 - BriefingService.swift: Actor for data aggregation and AI generation
 - BriefingScheduler.swift: @MainActor with DispatchSourceTimer for morning generation
 - DatabaseService.swift: Briefing CRUD (storeBriefing, getLatestValidBriefing, aggregation queries)
+- AIManager.swift: Briefing integration (startBriefingScheduler, getCurrentBriefing, onBriefingGenerated)
+- BriefingSettingsView.swift: Full settings UI (schedule, cache, model, status)
+- ContentView.swift: BriefingSettingsSection inline component, scheduler initialization
+- AppState.swift: Briefing callbacks, selectedItemId for navigation, auto-show tab before 10am
 
 ## Pending Todos
 
@@ -200,7 +211,7 @@ Progress: ██████████ 100% (Plan 15-01)
 
 ## Blockers/Concerns
 
-None - Plan 15-01 complete
+None - Phase 15 complete
 
 ## Roadmap Evolution
 
@@ -219,10 +230,12 @@ None - Plan 15-01 complete
 - Phase 13 (AI Priority Analysis) completed: 2026-01-20
 - Phase 14 (Smart Progress Tracking) completed: 2026-01-20
 - Phase 15 Plan 1 (Briefing Models, Service, Scheduler) completed: 2026-01-20
+- Phase 15 Plan 3 (Settings and Integration) completed: 2026-01-20
+- Phase 15 (Daily AI Briefing) completed: 2026-01-20
 
 ## Session Continuity
 
 Last session: 2026-01-20
-Stopped at: Completed Plan 15-01 (Briefing Models, Service, Scheduler)
+Stopped at: Completed Phase 15 (Daily AI Briefing)
 Resume file: None
-Next: Plan 15-02 (Briefing UI Components)
+Next: Phase 16 (AI Chat Interface)
