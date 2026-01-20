@@ -21,7 +21,9 @@ let package = Package(
         // YAML parsing for GSD frontmatter
         .package(url: "https://github.com/jpsim/Yams", from: "6.0.0"),
         // Async algorithms for periodic scanning timer
-        .package(url: "https://github.com/apple/swift-async-algorithms", from: "1.0.0")
+        .package(url: "https://github.com/apple/swift-async-algorithms", from: "1.0.0"),
+        // Rich markdown rendering for chat messages
+        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0")
     ],
     targets: [
         .executableTarget(
@@ -33,7 +35,8 @@ let package = Package(
                 "KeyboardShortcuts",
                 .product(name: "PostgresNIO", package: "postgres-nio"),
                 "Yams",
-                .product(name: "AsyncAlgorithms", package: "swift-async-algorithms")
+                .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
+                .product(name: "MarkdownUI", package: "swift-markdown-ui")
             ],
             path: ".",
             exclude: ["Package.swift", "Info.plist"],
