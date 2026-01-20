@@ -86,6 +86,13 @@ Progress: ██████████ 100% (Phase 15 Complete)
 - Fallback briefing when AI unavailable
 - Parallel data aggregation for performance
 
+**Phase 15 Decisions (Plan 15-02):**
+- 5 section types: urgent (red), blocked (orange), stale (yellow), deadlines (blue), focus (purple)
+- Source colors: azure_devops=blue, outlook=teal, gmail=red, teams=purple
+- BriefingViewModel uses Combine to observe BriefingScheduler state
+- Timer-based cooldown countdown for refresh rate limiting
+- Navigation on item tap switches to Tasks tab (UIBR-03)
+
 **Phase 15 Decisions (Plan 15-03):**
 - Inline settings in popover (not separate navigation)
 - Schedule time range 5-11 AM for morning briefing
@@ -194,12 +201,30 @@ Progress: ██████████ 100% (Phase 15 Complete)
 - PRIORITY_PIPELINE_INTEGRATION.md: Integration guide for UI team
 
 **Phase 15 Implementation (Daily AI Briefing - Complete):**
+Plan 15-01 (Models, Service, Scheduler):
 - Briefing.swift: Models (BriefingContent, section items, BriefingInputData, BriefingError)
 - 03-briefing-schema.sql: Database schema (beacon_briefings table, views, functions)
 - BriefingSettings.swift: UserDefaults-backed settings singleton (schedule, cache, model, notifications)
 - BriefingService.swift: Actor for data aggregation and AI generation
 - BriefingScheduler.swift: @MainActor with DispatchSourceTimer for morning generation
 - DatabaseService.swift: Briefing CRUD (storeBriefing, getLatestValidBriefing, aggregation queries)
+
+Plan 15-02 (UI Components):
+- BriefingSectionHeader.swift: Collapsible section headers with BriefingSectionType enum
+  - 5 section types: urgent (red), blocked (orange), stale (yellow), deadlines (blue), focus (purple)
+  - Count badge, animated chevron rotation, hover state
+- BriefingItemRow.swift: Base row + 5 specialized variants
+  - UrgentItemRow, BlockedItemRow, StaleItemRow, DeadlineItemRow, FocusAreaRow
+  - Source colors: azure_devops=blue, outlook=teal, gmail=red, teams=purple
+- BriefingViewModel.swift: @MainActor view model with Combine bindings to scheduler
+  - loadBriefing(), refresh(), clearError() methods
+  - Timer-based cooldown countdown for rate limiting
+- BriefingTab.swift: Complete implementation replacing placeholder
+  - 4 states: Loading, Error, Empty, Content
+  - BriefingGreeting, BriefingClosingNote, BriefingFooter components
+  - Navigation on item tap switches to Tasks tab (UIBR-03)
+
+Plan 15-03 (Settings & Integration):
 - AIManager.swift: Briefing integration (startBriefingScheduler, getCurrentBriefing, onBriefingGenerated)
 - BriefingSettingsView.swift: Full settings UI (schedule, cache, model, status)
 - ContentView.swift: BriefingSettingsSection inline component, scheduler initialization
@@ -230,6 +255,7 @@ None - Phase 15 complete
 - Phase 13 (AI Priority Analysis) completed: 2026-01-20
 - Phase 14 (Smart Progress Tracking) completed: 2026-01-20
 - Phase 15 Plan 1 (Briefing Models, Service, Scheduler) completed: 2026-01-20
+- Phase 15 Plan 2 (Briefing UI Components) completed: 2026-01-20
 - Phase 15 Plan 3 (Settings and Integration) completed: 2026-01-20
 - Phase 15 (Daily AI Briefing) completed: 2026-01-20
 
