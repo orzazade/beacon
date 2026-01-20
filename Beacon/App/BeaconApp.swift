@@ -39,9 +39,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Handle URL callbacks for Google Sign In OAuth
+    /// Handle URL callbacks for OAuth (Google and Microsoft)
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
+            // Try Google Sign-In first
             if GIDSignIn.sharedInstance.handle(url) {
                 return
             }

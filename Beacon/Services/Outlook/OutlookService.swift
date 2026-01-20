@@ -21,13 +21,13 @@ actor OutlookService {
     func getFlaggedEmails() async throws -> [Email] {
         let token = try await auth.acquireGraphToken()
 
-        // Build URL with filter for flagged OR high importance emails
+        // Build URL for important emails (no filter+orderby combo - causes InefficientFilter error)
+        // Just fetch recent messages and filter in code
         var components = URLComponents(string: "https://graph.microsoft.com/v1.0/me/messages")!
         components.queryItems = [
-            URLQueryItem(name: "$filter", value: "flag/flagStatus eq 'flagged' or importance eq 'high'"),
             URLQueryItem(name: "$select", value: "id,subject,from,receivedDateTime,bodyPreview,importance,flag,isRead"),
             URLQueryItem(name: "$orderby", value: "receivedDateTime desc"),
-            URLQueryItem(name: "$top", value: "50")
+            URLQueryItem(name: "$top", value: "100")
         ]
 
         var request = URLRequest(url: components.url!)
@@ -40,13 +40,24 @@ actor OutlookService {
         }
 
         guard httpResponse.statusCode == 200 else {
+            // Log the error response for debugging
+            if let errorBody = String(data: data, encoding: .utf8) {
+                print("[Outlook] API error \(httpResponse.statusCode): \(errorBody)")
+            }
             throw OutlookError.httpError(httpResponse.statusCode)
         }
 
         let decoder = JSONDecoder()
         let graphResponse = try decoder.decode(GraphMessagesResponse.self, from: data)
 
-        return graphResponse.value.map { message in
+        // Filter in code: flagged OR high importance
+        let filteredMessages = graphResponse.value.filter { message in
+            let isFlagged = message.flag?.flagStatus?.lowercased() == "flagged"
+            let isHighImportance = message.importance?.lowercased() == "high"
+            return isFlagged || isHighImportance
+        }
+
+        return filteredMessages.map { message in
             mapToEmail(message)
         }
     }

@@ -6,7 +6,7 @@ struct AuthStatusView: View {
     var body: some View {
         VStack(spacing: 16) {
             // Microsoft section
-            GroupBox("Microsoft (Azure DevOps + Outlook)") {
+            GroupBox("Microsoft (Outlook + Teams)") {
                 HStack {
                     Circle()
                         .fill(authManager.isMicrosoftSignedIn ? .green : .red)
@@ -26,6 +26,26 @@ struct AuthStatusView: View {
                 }
                 .padding(.vertical, 4)
             }
+
+            // Azure DevOps section (separate consent)
+            GroupBox("Azure DevOps") {
+                HStack {
+                    Circle()
+                        .fill(authManager.isDevOpsAuthorized ? .green : .orange)
+                        .frame(width: 12, height: 12)
+                    Text(authManager.isDevOpsAuthorized ? "Authorized" : "Needs authorization")
+                    Spacer()
+                    if authManager.isMicrosoftSignedIn && !authManager.isDevOpsAuthorized {
+                        Button("Authorize") {
+                            Task { await authManager.authorizeDevOps() }
+                        }
+                        .disabled(authManager.isLoading)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .disabled(!authManager.isMicrosoftSignedIn)
+            .opacity(authManager.isMicrosoftSignedIn ? 1.0 : 0.5)
 
             // Google section
             GroupBox("Google (Gmail)") {

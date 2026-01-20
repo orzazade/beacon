@@ -21,11 +21,10 @@ actor TeamsService {
     func getRecentChats() async throws -> [TeamsChat] {
         let token = try await auth.acquireGraphToken()
 
-        // Build URL with expand for lastMessagePreview and ordering
+        // Build URL with expand for lastMessagePreview (orderby not supported on /me/chats)
         var components = URLComponents(string: "https://graph.microsoft.com/v1.0/me/chats")!
         components.queryItems = [
             URLQueryItem(name: "$expand", value: "lastMessagePreview"),
-            URLQueryItem(name: "$orderby", value: "lastUpdatedDateTime desc"),
             URLQueryItem(name: "$top", value: "20")
         ]
 
@@ -39,49 +38,40 @@ actor TeamsService {
         }
 
         guard httpResponse.statusCode == 200 else {
+            // Log the error response for debugging
+            if let errorBody = String(data: data, encoding: .utf8) {
+                print("[Teams] Chats API error \(httpResponse.statusCode): \(errorBody)")
+            }
             throw TeamsError.httpError(httpResponse.statusCode)
         }
 
         let decoder = JSONDecoder()
         let chatsResponse = try decoder.decode(TeamsChatsResponse.self, from: data)
 
+        print("[Teams] Found \(chatsResponse.value.count) chats")
         return chatsResponse.value
     }
 
     /// Fetch recent messages from all chats for unified task list
-    /// Returns messages where importance is "urgent" OR from the last hour
+    /// Returns most recent messages from the last 24 hours
     /// - Returns: Array of TeamsChatMessage models
     func getRecentMessages() async throws -> [TeamsChatMessage] {
         let chats = try await getRecentChats()
 
         var allMessages: [TeamsChatMessage] = []
-        let oneHourAgo = Date().addingTimeInterval(-3600)
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
-        // Fetch messages from each chat
-        for chat in chats {
+        // Fetch messages from each chat (limit to first 5 chats to avoid too many API calls)
+        for chat in chats.prefix(5) {
             do {
                 let messages = try await fetchMessagesFromChat(chatId: chat.id)
+                print("[Teams] Chat \(chat.id.prefix(8))...: \(messages.count) messages")
 
-                // Filter: urgent OR from last hour
-                let relevantMessages = messages.filter { message in
-                    // Check if urgent
-                    if message.importance?.lowercased() == "urgent" {
-                        return true
-                    }
-
-                    // Check if from last hour
-                    if let messageDate = formatter.date(from: message.createdDateTime) {
-                        return messageDate > oneHourAgo
-                    }
-
-                    return false
-                }
-
-                allMessages.append(contentsOf: relevantMessages)
+                // Take up to 3 most recent messages per chat (no filtering)
+                allMessages.append(contentsOf: messages.prefix(3))
             } catch {
-                // Continue with other chats if one fails
+                print("[Teams] Error fetching chat \(chat.id.prefix(8))...: \(error)")
                 continue
             }
         }
@@ -95,28 +85,24 @@ actor TeamsService {
             return date1 > date2
         }
 
-        return allMessages
+        // Return top 10 most recent messages overall
+        let result = Array(allMessages.prefix(10))
+        print("[Teams] Returning \(result.count) messages")
+        return result
     }
 
     // MARK: - Private Methods
 
     /// Fetch messages from a specific chat
     /// - Parameter chatId: The ID of the chat to fetch messages from
-    /// - Returns: Array of TeamsChatMessage models from last 24 hours
+    /// - Returns: Array of recent TeamsChatMessage models
     private func fetchMessagesFromChat(chatId: String) async throws -> [TeamsChatMessage] {
         let token = try await auth.acquireGraphToken()
 
-        // Calculate 24 hours ago for filter
-        let twentyFourHoursAgo = Date().addingTimeInterval(-86400)
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        let dateString = formatter.string(from: twentyFourHoursAgo)
-
-        // Build URL with filter for messages from last 24 hours
+        // Get recent messages (no filter - just top N)
         var components = URLComponents(string: "https://graph.microsoft.com/v1.0/me/chats/\(chatId)/messages")!
         components.queryItems = [
-            URLQueryItem(name: "$filter", value: "createdDateTime ge \(dateString)"),
-            URLQueryItem(name: "$top", value: "50")
+            URLQueryItem(name: "$top", value: "10")
         ]
 
         var request = URLRequest(url: components.url!)
@@ -129,6 +115,9 @@ actor TeamsService {
         }
 
         guard httpResponse.statusCode == 200 else {
+            if let errorBody = String(data: data, encoding: .utf8) {
+                print("[Teams] Messages API error \(httpResponse.statusCode): \(errorBody)")
+            }
             throw TeamsError.httpError(httpResponse.statusCode)
         }
 

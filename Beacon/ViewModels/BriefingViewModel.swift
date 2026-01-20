@@ -31,8 +31,11 @@ class BriefingViewModel: ObservableObject {
 
     // MARK: - Initialization
 
-    init(scheduler: BriefingScheduler = BriefingScheduler()) {
-        self.scheduler = scheduler
+    /// Creates a new BriefingViewModel
+    /// - Parameter scheduler: The briefing scheduler to use (defaults to a new instance)
+    @MainActor
+    init(scheduler: BriefingScheduler? = nil) {
+        self.scheduler = scheduler ?? BriefingScheduler()
         setupBindings()
     }
 
