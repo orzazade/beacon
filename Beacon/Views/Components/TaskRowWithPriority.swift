@@ -1,13 +1,16 @@
 import SwiftUI
 
-/// Task row with integrated priority badge and reasoning popover
+/// Task row with integrated priority badge, progress indicator, and reasoning popovers
 struct TaskRowWithPriority: View {
     let item: BeaconItem
     let priorityScore: PriorityScore?
+    let progressScore: ProgressScore?
     let onPriorityOverride: (AIPriorityLevel) -> Void
+    let onProgressOverride: (ProgressState) -> Void
 
     @State private var isHovering = false
-    @State private var showingReasoning = false
+    @State private var showingPriorityReasoning = false
+    @State private var showingProgressReasoning = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -19,9 +22,9 @@ struct TaskRowWithPriority: View {
                     isManualOverride: score.isManualOverride
                 )
                 .onTapGesture {
-                    showingReasoning = true
+                    showingPriorityReasoning = true
                 }
-                .popover(isPresented: $showingReasoning) {
+                .popover(isPresented: $showingPriorityReasoning) {
                     PriorityReasoningView(score: score)
                 }
                 .contextMenu {
@@ -33,6 +36,27 @@ struct TaskRowWithPriority: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.secondary)
                     .frame(width: 24)
+            }
+
+            // Progress indicator
+            if let progressScore = progressScore {
+                CompactProgressIndicator(state: progressScore.state)
+                    .onTapGesture {
+                        showingProgressReasoning = true
+                    }
+                    .popover(isPresented: $showingProgressReasoning) {
+                        ProgressReasoningView(score: progressScore)
+                    }
+                    .contextMenu {
+                        progressContextMenu
+                    }
+                    .help(progressScore.state.displayName)
+            } else {
+                // Placeholder for items without progress analysis
+                Image(systemName: "circle.dotted")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary.opacity(0.5))
+                    .frame(width: 16)
             }
 
             // Source icon with source-specific color
@@ -110,6 +134,31 @@ struct TaskRowWithPriority: View {
         }
     }
 
+    @ViewBuilder
+    private var progressContextMenu: some View {
+        Text("Set Progress")
+            .font(.headline)
+
+        Divider()
+
+        ForEach(ProgressState.allCases, id: \.self) { state in
+            Button(action: { onProgressOverride(state) }) {
+                HStack {
+                    Image(systemName: state.iconName)
+                    Text(state.displayName)
+                }
+            }
+        }
+
+        if progressScore?.isManualOverride == true {
+            Divider()
+            Button("Clear Manual Override") {
+                // Re-trigger AI analysis
+                // The pipeline will re-analyze on next run
+            }
+        }
+    }
+
     private var sourceIcon: String {
         switch item.source {
         case "azure_devops": return "checklist"
@@ -144,7 +193,7 @@ struct TaskRowWithPriority: View {
 
 // MARK: - Preview
 
-#Preview("Task Row with Priority") {
+#Preview("Task Row with Priority and Progress") {
     VStack(spacing: 0) {
         TaskRowWithPriority(
             item: BeaconItem(
@@ -171,7 +220,19 @@ struct TaskRowWithPriority: View {
                 ],
                 modelUsed: "openai/gpt-5.2-nano"
             ),
-            onPriorityOverride: { _ in }
+            progressScore: ProgressScore(
+                itemId: UUID(),
+                state: .inProgress,
+                confidence: 0.85,
+                reasoning: "Recent commits detected on this ticket",
+                signals: [
+                    ProgressScoreSignal(type: .activity, weight: 0.25, source: "commit", description: "Pushed fix for bug")
+                ],
+                lastActivityAt: Date().addingTimeInterval(-3600),
+                modelUsed: "openai/gpt-5.2-nano"
+            ),
+            onPriorityOverride: { _ in },
+            onProgressOverride: { _ in }
         )
 
         Divider()
@@ -199,7 +260,16 @@ struct TaskRowWithPriority: View {
                 signals: [],
                 modelUsed: "openai/gpt-5.2-nano"
             ),
-            onPriorityOverride: { _ in }
+            progressScore: ProgressScore(
+                itemId: UUID(),
+                state: .done,
+                confidence: 0.90,
+                reasoning: "No action required on informational email",
+                signals: [],
+                modelUsed: "openai/gpt-5.2-nano"
+            ),
+            onPriorityOverride: { _ in },
+            onProgressOverride: { _ in }
         )
 
         Divider()
@@ -220,8 +290,51 @@ struct TaskRowWithPriority: View {
                 indexedAt: nil
             ),
             priorityScore: nil,
-            onPriorityOverride: { _ in }
+            progressScore: nil,
+            onPriorityOverride: { _ in },
+            onProgressOverride: { _ in }
+        )
+
+        Divider()
+
+        // Blocked task example
+        TaskRowWithPriority(
+            item: BeaconItem(
+                id: UUID(),
+                itemType: "task",
+                source: "azure_devops",
+                externalId: "999",
+                title: "Deploy to production",
+                content: "Waiting for security review",
+                summary: nil,
+                metadata: nil,
+                embedding: nil,
+                createdAt: Date().addingTimeInterval(-259200),
+                updatedAt: Date(),
+                indexedAt: nil
+            ),
+            priorityScore: PriorityScore(
+                itemId: UUID(),
+                level: .p1,
+                confidence: 0.80,
+                reasoning: "High priority deployment task",
+                signals: [],
+                modelUsed: "openai/gpt-5.2-nano"
+            ),
+            progressScore: ProgressScore(
+                itemId: UUID(),
+                state: .blocked,
+                confidence: 0.90,
+                reasoning: "Waiting on security review approval",
+                signals: [
+                    ProgressScoreSignal(type: .blocker, weight: 0.35, source: "email", description: "Waiting for security team")
+                ],
+                lastActivityAt: Date().addingTimeInterval(-86400),
+                modelUsed: "openai/gpt-5.2-nano"
+            ),
+            onPriorityOverride: { _ in },
+            onProgressOverride: { _ in }
         )
     }
-    .frame(width: 400)
+    .frame(width: 450)
 }
