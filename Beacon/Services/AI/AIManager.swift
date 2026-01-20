@@ -25,6 +25,10 @@ class AIManager: ObservableObject {
     private let progressPipeline: ProgressPipeline
     private let progressAnalysis: ProgressAnalysisService
 
+    // Briefing
+    private let briefingService: BriefingService
+    private let briefingScheduler: BriefingScheduler
+
     // State
     @Published var isOllamaAvailable = false
     @Published var isOpenRouterConfigured = false
@@ -41,7 +45,9 @@ class AIManager: ObservableObject {
         priorityAnalysis: PriorityAnalysisService? = nil,
         priorityPipeline: PriorityPipeline? = nil,
         progressAnalysis: ProgressAnalysisService? = nil,
-        progressPipeline: ProgressPipeline? = nil
+        progressPipeline: ProgressPipeline? = nil,
+        briefingService: BriefingService? = nil,
+        briefingScheduler: BriefingScheduler? = nil
     ) {
         self.ollama = ollama
         self.openRouter = openRouter
@@ -56,6 +62,8 @@ class AIManager: ObservableObject {
             analysisService: self.progressAnalysis,
             database: database
         )
+        self.briefingService = briefingService ?? BriefingService(database: database, openRouter: openRouter)
+        self.briefingScheduler = briefingScheduler ?? BriefingScheduler(briefingService: self.briefingService)
     }
 
     // MARK: - Initialization
@@ -82,6 +90,11 @@ class AIManager: ObservableObject {
         // Load VIP emails for priority analysis
         if let vipEmails = try? await database.getVIPEmails() {
             await priorityPipeline.setVIPEmails(vipEmails)
+        }
+
+        // Start briefing scheduler if enabled and OpenRouter is configured
+        if isOpenRouterConfigured && BriefingSettings.shared.isEnabled {
+            startBriefingScheduler()
         }
     }
 
@@ -196,6 +209,58 @@ class AIManager: ObservableObject {
     /// Get stale items (in progress but no activity for threshold)
     func getStaleItems() async throws -> [UUID] {
         try await database.getStaleItems(threshold: ProgressSettings.shared.stalenessThresholdSeconds)
+    }
+
+    // MARK: - Briefing
+
+    /// Start the briefing scheduler
+    func startBriefingScheduler() {
+        briefingScheduler.start()
+    }
+
+    /// Stop the briefing scheduler
+    func stopBriefingScheduler() {
+        briefingScheduler.stop()
+    }
+
+    /// Get current briefing (from cache or generate new)
+    func getCurrentBriefing() async throws -> BriefingContent {
+        try await briefingScheduler.getCurrentBriefing()
+    }
+
+    /// Force refresh briefing (respects rate limiting)
+    func refreshBriefing() async throws -> BriefingContent {
+        try await briefingScheduler.refreshBriefing()
+    }
+
+    /// Check if manual refresh is allowed (rate limiting)
+    func canRefreshBriefing() async -> Bool {
+        await briefingScheduler.canRefresh()
+    }
+
+    /// Next scheduled briefing time
+    var nextBriefingTime: Date? {
+        briefingScheduler.statistics.nextScheduledTime
+    }
+
+    /// Last briefing generation time
+    var lastBriefingTime: Date? {
+        briefingScheduler.statistics.lastGenerationTime
+    }
+
+    /// Set callback for when briefing is generated
+    func onBriefingGenerated(_ callback: @escaping (BriefingContent) -> Void) {
+        briefingScheduler.onBriefingGenerated = callback
+    }
+
+    /// Get briefing scheduler statistics
+    var briefingSchedulerStats: BriefingSchedulerStatistics {
+        briefingScheduler.statistics
+    }
+
+    /// Trigger immediate briefing generation
+    func triggerBriefingNow() async {
+        await briefingScheduler.triggerNow()
     }
 
     // MARK: - Embeddings
