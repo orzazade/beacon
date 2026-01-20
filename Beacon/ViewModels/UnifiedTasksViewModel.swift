@@ -31,6 +31,12 @@ class UnifiedTasksViewModel: ObservableObject {
     /// Priority scores cache (keyed by BeaconItem UUID)
     @Published var priorityScores: [UUID: PriorityScore] = [:]
 
+    /// Progress scores cache (keyed by BeaconItem UUID)
+    @Published var progressScores: [UUID: ProgressScore] = [:]
+
+    /// Filter: empty = show all progress states
+    @Published var selectedProgressStates: Set<ProgressState> = []
+
     private let authManager: AuthManager
     let aiManager: AIManager
 
@@ -197,8 +203,9 @@ class UnifiedTasksViewModel: ObservableObject {
             // Trigger background embedding generation
             await processEmbeddingsInBackground()
 
-            // Load priority scores after persistence
+            // Load priority and progress scores after persistence
             await loadPriorityScores()
+            await loadProgressScores()
         } catch {
             // Database persistence failure shouldn't affect UI
             print("Failed to persist tasks to database: \(error)")

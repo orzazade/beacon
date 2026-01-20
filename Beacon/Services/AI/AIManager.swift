@@ -21,6 +21,10 @@ class AIManager: ObservableObject {
     private let priorityPipeline: PriorityPipeline
     private let priorityAnalysis: PriorityAnalysisService
 
+    // Progress Tracking
+    private let progressPipeline: ProgressPipeline
+    private let progressAnalysis: ProgressAnalysisService
+
     // State
     @Published var isOllamaAvailable = false
     @Published var isOpenRouterConfigured = false
@@ -35,7 +39,9 @@ class AIManager: ObservableObject {
         openRouter: OpenRouterService = OpenRouterService(),
         database: DatabaseService = DatabaseService(),
         priorityAnalysis: PriorityAnalysisService? = nil,
-        priorityPipeline: PriorityPipeline? = nil
+        priorityPipeline: PriorityPipeline? = nil,
+        progressAnalysis: ProgressAnalysisService? = nil,
+        progressPipeline: ProgressPipeline? = nil
     ) {
         self.ollama = ollama
         self.openRouter = openRouter
@@ -43,6 +49,11 @@ class AIManager: ObservableObject {
         self.priorityAnalysis = priorityAnalysis ?? PriorityAnalysisService(openRouter: openRouter)
         self.priorityPipeline = priorityPipeline ?? PriorityPipeline(
             analysisService: self.priorityAnalysis,
+            database: database
+        )
+        self.progressAnalysis = progressAnalysis ?? ProgressAnalysisService(openRouter: openRouter)
+        self.progressPipeline = progressPipeline ?? ProgressPipeline(
+            analysisService: self.progressAnalysis,
             database: database
         )
     }
@@ -123,6 +134,48 @@ class AIManager: ObservableObject {
             modelUsed: "manual"
         )
         try await database.storePriorityScore(score)
+    }
+
+    // MARK: - Progress Pipeline
+
+    /// Start background progress analysis
+    func startProgressPipeline() {
+        progressPipeline.start()
+    }
+
+    /// Stop background progress analysis
+    func stopProgressPipeline() {
+        progressPipeline.stop()
+    }
+
+    /// Get progress pipeline statistics
+    var progressPipelineStats: PipelineStatistics {
+        progressPipeline.statistics
+    }
+
+    /// Trigger immediate progress analysis
+    func triggerProgressAnalysis() async {
+        await progressPipeline.triggerNow()
+    }
+
+    /// Get progress score for an item
+    func getProgressScore(for itemId: UUID) async throws -> ProgressScore? {
+        try await database.getProgressScore(itemId: itemId)
+    }
+
+    /// Manually set progress for an item (override AI)
+    func setManualProgress(itemId: UUID, state: ProgressState, reasoning: String = "Manual override") async throws {
+        let score = ProgressScore(
+            itemId: itemId,
+            state: state,
+            confidence: 1.0,
+            reasoning: reasoning,
+            signals: [],
+            isManualOverride: true,
+            lastActivityAt: Date(),
+            modelUsed: "manual"
+        )
+        try await database.storeProgressScore(score)
     }
 
     // MARK: - Embeddings
