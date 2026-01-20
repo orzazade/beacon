@@ -1549,4 +1549,277 @@ actor DatabaseService {
 
         return (item, dueDate)
     }
+
+    // MARK: - Chat Thread Operations
+
+    /// Create a new chat thread
+    /// - Parameter title: Optional title for the thread
+    /// - Returns: The created ChatThread
+    func createChatThread(title: String? = nil) async throws -> ChatThread {
+        guard isConnected, let client = client else {
+            throw ChatError.noDatabaseConnection
+        }
+
+        let thread = ChatThread(
+            id: UUID(),
+            title: title,
+            createdAt: Date(),
+            updatedAt: Date(),
+            lastMessageAt: nil,
+            messageCount: 0
+        )
+
+        let escapedTitle = title?.replacingOccurrences(of: "'", with: "''") ?? ""
+        let titleSQL = title != nil ? "'\(escapedTitle)'" : "NULL"
+
+        let insertSQL = """
+            INSERT INTO chat_threads (id, title, created_at, updated_at, last_message_at, message_count)
+            VALUES (
+                '\(thread.id.uuidString)',
+                \(titleSQL),
+                '\(ISO8601DateFormatter().string(from: thread.createdAt))',
+                '\(ISO8601DateFormatter().string(from: thread.updatedAt))',
+                NULL,
+                0
+            )
+            """
+
+        _ = try await client.query(PostgresQuery(unsafeSQL: insertSQL))
+        logger.info("Created chat thread: \(thread.id)")
+        return thread
+    }
+
+    /// Get chat threads sorted by most recent activity
+    /// - Parameter limit: Maximum number of threads to return
+    /// - Returns: Array of ChatThread sorted by updatedAt DESC
+    func getChatThreads(limit: Int = 20) async throws -> [ChatThread] {
+        guard isConnected, let client = client else {
+            throw ChatError.noDatabaseConnection
+        }
+
+        let querySQL = """
+            SELECT id::text, title, created_at, updated_at, last_message_at, message_count
+            FROM chat_threads
+            ORDER BY updated_at DESC
+            LIMIT \(limit)
+            """
+
+        var threads: [ChatThread] = []
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+
+        for try await row in rows {
+            let thread = try decodeChatThread(from: row)
+            threads.append(thread)
+        }
+
+        return threads
+    }
+
+    /// Get a single chat thread by ID
+    /// - Parameter id: The thread UUID
+    /// - Returns: ChatThread if found, nil otherwise
+    func getChatThread(id: UUID) async throws -> ChatThread? {
+        guard isConnected, let client = client else {
+            throw ChatError.noDatabaseConnection
+        }
+
+        let querySQL = """
+            SELECT id::text, title, created_at, updated_at, last_message_at, message_count
+            FROM chat_threads
+            WHERE id = '\(id.uuidString)'
+            """
+
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+        for try await row in rows {
+            return try decodeChatThread(from: row)
+        }
+        return nil
+    }
+
+    /// Update chat thread title
+    /// - Parameters:
+    ///   - threadId: The thread UUID
+    ///   - title: The new title
+    func updateChatThreadTitle(_ threadId: UUID, title: String) async throws {
+        guard isConnected, let client = client else {
+            throw ChatError.noDatabaseConnection
+        }
+
+        let escapedTitle = title.replacingOccurrences(of: "'", with: "''")
+
+        let updateSQL = """
+            UPDATE chat_threads
+            SET title = '\(escapedTitle)', updated_at = NOW()
+            WHERE id = '\(threadId.uuidString)'
+            """
+
+        _ = try await client.query(PostgresQuery(unsafeSQL: updateSQL))
+        logger.info("Updated chat thread title: \(threadId)")
+    }
+
+    /// Delete a chat thread (cascade deletes all messages)
+    /// - Parameter threadId: The thread UUID to delete
+    func deleteChatThread(_ threadId: UUID) async throws {
+        guard isConnected, let client = client else {
+            throw ChatError.noDatabaseConnection
+        }
+
+        let deleteSQL = "DELETE FROM chat_threads WHERE id = '\(threadId.uuidString)'"
+        _ = try await client.query(PostgresQuery(unsafeSQL: deleteSQL))
+        logger.info("Deleted chat thread: \(threadId)")
+    }
+
+    // MARK: - Chat Message Operations
+
+    /// Get messages for a thread with pagination
+    /// - Parameters:
+    ///   - threadId: The thread UUID
+    ///   - limit: Maximum number of messages
+    ///   - offset: Offset for pagination
+    /// - Returns: Array of ChatMessage, oldest first
+    func getChatMessages(threadId: UUID, limit: Int = 50, offset: Int = 0) async throws -> [ChatMessage] {
+        guard isConnected, let client = client else {
+            throw ChatError.noDatabaseConnection
+        }
+
+        let querySQL = """
+            SELECT id::text, thread_id::text, role, content, citations::text, suggested_actions::text,
+                   tokens_used, model_used, created_at
+            FROM chat_messages
+            WHERE thread_id = '\(threadId.uuidString)'
+            ORDER BY created_at ASC
+            LIMIT \(limit) OFFSET \(offset)
+            """
+
+        var messages: [ChatMessage] = []
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+
+        for try await row in rows {
+            let message = try decodeChatMessage(from: row)
+            messages.append(message)
+        }
+
+        return messages
+    }
+
+    /// Add a message to a thread
+    /// - Parameter message: The ChatMessage to add
+    func addChatMessage(_ message: ChatMessage) async throws {
+        guard isConnected, let client = client else {
+            throw ChatError.noDatabaseConnection
+        }
+
+        // Encode citations to JSON
+        let citationsJSON: String
+        do {
+            let data = try JSONEncoder().encode(message.citations)
+            citationsJSON = String(data: data, encoding: .utf8) ?? "[]"
+        } catch {
+            citationsJSON = "[]"
+        }
+
+        // Encode suggested actions to JSON
+        let actionsJSON: String
+        do {
+            let data = try JSONEncoder().encode(message.suggestedActions)
+            actionsJSON = String(data: data, encoding: .utf8) ?? "[]"
+        } catch {
+            actionsJSON = "[]"
+        }
+
+        let escapedContent = message.content.replacingOccurrences(of: "'", with: "''")
+        let escapedCitations = citationsJSON.replacingOccurrences(of: "'", with: "''")
+        let escapedActions = actionsJSON.replacingOccurrences(of: "'", with: "''")
+
+        let tokensSQL = message.tokensUsed.map { String($0) } ?? "NULL"
+        let modelSQL = message.modelUsed.map { "'\($0)'" } ?? "NULL"
+
+        let insertSQL = """
+            INSERT INTO chat_messages (id, thread_id, role, content, citations, suggested_actions, tokens_used, model_used, created_at)
+            VALUES (
+                '\(message.id.uuidString)',
+                '\(message.threadId.uuidString)',
+                '\(message.role.rawValue)',
+                '\(escapedContent)',
+                '\(escapedCitations)'::jsonb,
+                '\(escapedActions)'::jsonb,
+                \(tokensSQL),
+                \(modelSQL),
+                '\(ISO8601DateFormatter().string(from: message.createdAt))'
+            )
+            """
+
+        _ = try await client.query(PostgresQuery(unsafeSQL: insertSQL))
+        logger.debug("Added chat message to thread: \(message.threadId)")
+    }
+
+    /// Delete a chat message
+    /// - Parameter messageId: The message UUID to delete
+    func deleteChatMessage(_ messageId: UUID) async throws {
+        guard isConnected, let client = client else {
+            throw ChatError.noDatabaseConnection
+        }
+
+        let deleteSQL = "DELETE FROM chat_messages WHERE id = '\(messageId.uuidString)'"
+        _ = try await client.query(PostgresQuery(unsafeSQL: deleteSQL))
+        logger.info("Deleted chat message: \(messageId)")
+    }
+
+    // MARK: - Chat Decoding Helpers
+
+    private func decodeChatThread(from row: PostgresRow) throws -> ChatThread {
+        let (idStr, title, createdAt, updatedAt, lastMessageAt, messageCount) =
+            try row.decode((String, String?, Date, Date, Date?, Int).self)
+
+        guard let id = UUID(uuidString: idStr) else {
+            throw DatabaseError.queryFailed("Invalid UUID format for chat thread")
+        }
+
+        return ChatThread(
+            id: id,
+            title: title,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            lastMessageAt: lastMessageAt,
+            messageCount: messageCount
+        )
+    }
+
+    private func decodeChatMessage(from row: PostgresRow) throws -> ChatMessage {
+        let (idStr, threadIdStr, roleStr, content, citationsJSON, actionsJSON, tokensUsed, modelUsed, createdAt) =
+            try row.decode((String, String, String, String, String?, String?, Int?, String?, Date).self)
+
+        guard let id = UUID(uuidString: idStr),
+              let threadId = UUID(uuidString: threadIdStr) else {
+            throw DatabaseError.queryFailed("Invalid UUID format for chat message")
+        }
+
+        guard let role = MessageRole(rawValue: roleStr) else {
+            throw DatabaseError.queryFailed("Invalid message role: \(roleStr)")
+        }
+
+        // Decode citations from JSON
+        var citations: [Citation] = []
+        if let json = citationsJSON, let data = json.data(using: .utf8) {
+            citations = (try? JSONDecoder().decode([Citation].self, from: data)) ?? []
+        }
+
+        // Decode suggested actions from JSON
+        var suggestedActions: [SuggestedAction] = []
+        if let json = actionsJSON, let data = json.data(using: .utf8) {
+            suggestedActions = (try? JSONDecoder().decode([SuggestedAction].self, from: data)) ?? []
+        }
+
+        return ChatMessage(
+            id: id,
+            threadId: threadId,
+            role: role,
+            content: content,
+            citations: citations,
+            suggestedActions: suggestedActions,
+            tokensUsed: tokensUsed,
+            modelUsed: modelUsed,
+            createdAt: createdAt
+        )
+    }
 }
