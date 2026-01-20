@@ -256,6 +256,37 @@ struct AIServicesSettingsView: View {
                     .font(.caption)
             }
 
+            // Default Model Section
+            Section("Default AI Model") {
+                Picker("Model", selection: $viewModel.selectedModel) {
+                    ForEach(OpenRouterModel.allCases, id: \.self) { model in
+                        HStack {
+                            Text(model.displayName)
+                            if model.isFree {
+                                Text("FREE")
+                                    .font(.caption2)
+                                    .foregroundColor(.green)
+                            }
+                        }
+                        .tag(model)
+                    }
+                }
+
+                if viewModel.selectedModel.isFree {
+                    Text("Free tier - no cost")
+                        .font(.caption)
+                        .foregroundColor(.green)
+                } else {
+                    Text("~$\(viewModel.selectedModel.inputCostPerMillion, specifier: "%.2f")/$\(viewModel.selectedModel.outputCostPerMillion, specifier: "%.2f") per 1M tokens (in/out)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Text("Used for briefings, priority analysis, and progress tracking")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             // Database Section
             Section("Database (PostgreSQL)") {
                 HStack {
@@ -342,6 +373,16 @@ class AIServicesSettingsViewModel: ObservableObject {
     @Published var isSaving = false
     @Published var error: String?
 
+    /// Selected default model - syncs to all AI settings
+    @Published var selectedModel: OpenRouterModel = .gemma2Free {
+        didSet {
+            // Sync to all settings
+            BriefingSettings.shared.selectedModel = selectedModel
+            PrioritySettings.shared.selectedModel = selectedModel
+            ProgressSettings.shared.selectedModel = selectedModel
+        }
+    }
+
     func refresh() async {
         let aiManager = AIManager.shared
         isOpenRouterConfigured = aiManager.isOpenRouterConfigured
@@ -349,6 +390,9 @@ class AIServicesSettingsViewModel: ObservableObject {
         isOllamaAvailable = aiManager.isOllamaAvailable
         ollamaVersion = aiManager.ollamaVersion
         isDatabaseConnected = await aiManager.isDatabaseConnected
+
+        // Load current model from briefing settings (they should be in sync)
+        selectedModel = BriefingSettings.shared.selectedModel
     }
 
     func saveAPIKey() async {
