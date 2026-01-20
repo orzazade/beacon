@@ -37,7 +37,7 @@ struct ContentView: View {
         }
     }
 
-    /// Initialize local scanner once database is connected
+    /// Initialize AI services and local scanner
     private func initializeScannerIfNeeded() {
         // Only initialize once
         guard !scannerInitialized else { return }
@@ -47,16 +47,19 @@ struct ContentView: View {
         }
 
         Task {
-            // Check if database is connected
+            // Initialize AI services (database, Ollama, OpenRouter)
+            await AIManager.shared.checkServices()
+
+            // Check if database connected successfully
             guard await AIManager.shared.isDatabaseConnected else {
                 debugLog("[ContentView] Database not connected, skipping scanner init")
                 return
             }
 
+            debugLog("[ContentView] Database connected, initializing scanner")
             scannerInitialized = true
 
-            // Initialize scanner with new DatabaseService instance
-            // (AIManager.database is private, so we create a new instance that shares the same DB)
+            // Initialize scanner with shared DatabaseService
             authManager.initializeLocalScanner(
                 databaseService: DatabaseService(),
                 aiManager: AIManager.shared
@@ -255,6 +258,9 @@ struct SettingsContentView: View {
                         }
                     }
                     .padding(.horizontal)
+
+                    // Briefing section
+                    BriefingSettingsSection()
 
                     // Error display
                     if let error = authManager.error {
@@ -467,6 +473,107 @@ struct FooterView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+}
+
+/// Inline briefing settings section for popover settings
+struct BriefingSettingsSection: View {
+    @ObservedObject private var settings = BriefingSettings.shared
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Section header
+            Text("Briefing")
+                .font(.headline)
+                .padding(.horizontal)
+                .padding(.top, 8)
+
+            GroupBox {
+                VStack(spacing: 12) {
+                    // Main toggle row
+                    HStack {
+                        Image(systemName: "sun.horizon")
+                            .foregroundColor(.orange)
+                            .font(.system(size: 16))
+
+                        VStack(alignment: .leading) {
+                            Text("Daily Briefing")
+                                .font(.subheadline)
+                            Text("AI-generated morning summary")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Toggle("", isOn: $settings.isEnabled)
+                            .toggleStyle(.switch)
+                            .onChange(of: settings.isEnabled) { _, newValue in
+                                if newValue {
+                                    AIManager.shared.startBriefingScheduler()
+                                } else {
+                                    AIManager.shared.stopBriefingScheduler()
+                                }
+                            }
+                    }
+
+                    // Expandable settings when enabled
+                    if settings.isEnabled {
+                        Divider()
+
+                        // Schedule time
+                        HStack {
+                            Text("Schedule")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .frame(width: 70, alignment: .leading)
+
+                            Picker("", selection: $settings.scheduledHour) {
+                                ForEach(5...11, id: \.self) { hour in
+                                    Text("\(hour):00 AM").tag(hour)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: .infinity)
+                        }
+
+                        // Notification toggle
+                        HStack {
+                            Text("Notify")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .frame(width: 70, alignment: .leading)
+
+                            Toggle("When ready", isOn: $settings.showNotification)
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+                        }
+
+                        // Status indicator
+                        HStack {
+                            let stats = AIManager.shared.briefingSchedulerStats
+                            Circle()
+                                .fill(stats.isRunning ? Color.green : Color.gray)
+                                .frame(width: 6, height: 6)
+
+                            if let nextTime = stats.nextScheduledTimeString {
+                                Text("Next: \(nextTime)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            } else {
+                                Text(stats.isRunning ? "Running" : "Stopped")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
     }
 }
 
