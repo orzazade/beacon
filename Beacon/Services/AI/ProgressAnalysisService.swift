@@ -343,18 +343,39 @@ actor ProgressAnalysisService {
         return response.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    // MARK: - Signal Aggregation (Task 2 - Stub implementations)
+    // MARK: - Signal Aggregation and Pre-processing
+
+    /// Staleness threshold in seconds (3 days)
+    private let stalenessThreshold: TimeInterval = 3 * 24 * 60 * 60
 
     /// Extract and aggregate signals for a batch of items
+    /// Processes item content and related items to build comprehensive signal map
     func prepareSignals(
         for items: [BeaconItem],
         relatedItems: [UUID: [BeaconItem]]
     ) async -> [UUID: [ProgressSignal]] {
-        // Stub - will be implemented in Task 2
         var result: [UUID: [ProgressSignal]] = [:]
 
         for item in items {
             var signals: [ProgressSignal] = []
+
+            // Extract signals from item title (high priority)
+            let titleSignals = await signalExtractor.extractSignals(
+                from: item.title,
+                source: "\(item.source)_title",
+                relatedItemId: item.externalId
+            )
+            // Boost title signal weights
+            signals.append(contentsOf: titleSignals.map { signal in
+                ProgressSignal(
+                    type: signal.type,
+                    weight: signal.weight * 1.2,
+                    source: signal.source,
+                    context: signal.context,
+                    detectedAt: signal.detectedAt,
+                    relatedItemId: signal.relatedItemId
+                )
+            })
 
             // Extract signals from item content
             if let content = item.content {
@@ -366,13 +387,22 @@ actor ProgressAnalysisService {
                 signals.append(contentsOf: extracted)
             }
 
-            // Extract signals from related items
+            // Extract signals from related items (cross-source correlation)
             if let related = relatedItems[item.id] {
                 for relatedItem in related {
+                    // Extract from title
+                    let relatedTitleSignals = await signalExtractor.extractSignals(
+                        from: relatedItem.title,
+                        source: "\(relatedItem.source)_related",
+                        relatedItemId: relatedItem.externalId
+                    )
+                    signals.append(contentsOf: relatedTitleSignals)
+
+                    // Extract from content
                     if let content = relatedItem.content {
                         let extracted = await signalExtractor.extractSignals(
                             from: content,
-                            source: relatedItem.source,
+                            source: "\(relatedItem.source)_related",
                             relatedItemId: relatedItem.externalId
                         )
                         signals.append(contentsOf: extracted)
@@ -380,42 +410,106 @@ actor ProgressAnalysisService {
                 }
             }
 
-            result[item.id] = signals
+            // Apply recency boost to recent signals
+            let boostedSignals = await signalExtractor.applyRecencyBoost(to: signals)
+
+            result[item.id] = boostedSignals
         }
 
         return result
     }
 
-    /// Summarize signals for prompt (max 5 per type)
+    /// Summarize signals for prompt efficiency (max 5 per type)
+    /// Prioritizes highest weight signals and deduplicates similar context
     private func summarizeSignals(_ signals: [ProgressSignal]) -> [ProgressSignal] {
-        // Stub - will be enhanced in Task 2
-        // Group by type and take top 5 by weight per type
+        // Group by type
         var byType: [ProgressSignalType: [ProgressSignal]] = [:]
         for signal in signals {
             byType[signal.type, default: []].append(signal)
         }
 
         var result: [ProgressSignal] = []
+
         for (_, typeSignals) in byType {
-            let sorted = typeSignals.sorted { $0.weight > $1.weight }
-            result.append(contentsOf: sorted.prefix(5))
+            // Sort by weight (highest first), then by recency
+            let sorted = typeSignals.sorted { lhs, rhs in
+                if lhs.weight != rhs.weight {
+                    return lhs.weight > rhs.weight
+                }
+                return lhs.detectedAt > rhs.detectedAt
+            }
+
+            // Deduplicate similar contexts
+            var seenContexts = Set<String>()
+            var selected: [ProgressSignal] = []
+
+            for signal in sorted {
+                // Normalize context for comparison
+                let normalizedContext = signal.context.lowercased()
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .prefix(50)
+
+                if !seenContexts.contains(String(normalizedContext)) {
+                    selected.append(signal)
+                    seenContexts.insert(String(normalizedContext))
+                }
+
+                // Max 5 per type
+                if selected.count >= 5 {
+                    break
+                }
+            }
+
+            result.append(contentsOf: selected)
         }
 
         return result
     }
 
-    /// Adjust confidence based on signal quality
+    /// Check if item should be marked stale based on signal timing
+    /// Items in progress with no activity for 3+ days become stale
+    private func checkStaleness(
+        signals: [ProgressSignal],
+        currentState: ProgressState?
+    ) -> Bool {
+        // Only check staleness for in-progress items
+        guard currentState == .inProgress || currentState == nil else {
+            return false
+        }
+
+        // Find most recent activity or completion signal
+        let activitySignals = signals.filter { $0.type == .activity || $0.type == .completion }
+
+        guard let mostRecent = activitySignals.map({ $0.detectedAt }).max() else {
+            // No activity signals - might be stale if there are only commitment signals
+            let hasCommitment = signals.contains { $0.type == .commitment }
+            if hasCommitment {
+                // Check if commitment is old
+                if let oldestCommitment = signals.filter({ $0.type == .commitment }).map({ $0.detectedAt }).min() {
+                    return Date().timeIntervalSince(oldestCommitment) >= stalenessThreshold
+                }
+            }
+            return false
+        }
+
+        return Date().timeIntervalSince(mostRecent) >= stalenessThreshold
+    }
+
+    /// Adjust confidence based on signal quality and source diversity
+    /// Factors: multi-source correlation, recency, conflicts, manual overrides
     private func adjustConfidence(
         baseConfidence: Float,
         signals: [ProgressSignal],
         sourceCount: Int
     ) -> Float {
-        // Stub - will be enhanced in Task 2
         var confidence = baseConfidence
 
-        // Multi-source signals: +0.1 confidence
+        // Multi-source signals: +0.1 confidence (cross-source correlation)
         if sourceCount > 1 {
             confidence += 0.1
+        }
+        if sourceCount > 2 {
+            confidence += 0.05  // Additional boost for 3+ sources
         }
 
         // Recent signals (< 24h): +0.05 confidence
@@ -426,42 +520,109 @@ actor ProgressAnalysisService {
             confidence += 0.05
         }
 
+        // Very recent signals (< 1h): additional +0.05
+        let veryRecentSignals = signals.filter {
+            Date().timeIntervalSince($0.detectedAt) < 60 * 60
+        }
+        if !veryRecentSignals.isEmpty {
+            confidence += 0.05
+        }
+
         // Conflicting signals: -0.15 confidence
         let hasCompletion = signals.contains { $0.type == .completion }
         let hasBlocker = signals.contains { $0.type == .blocker }
+        let hasActivity = signals.contains { $0.type == .activity }
+
         if hasCompletion && hasBlocker {
-            confidence -= 0.15
+            confidence -= 0.15  // Conflicting: done vs blocked
+        }
+        if hasCompletion && hasActivity {
+            // Less severe - might be post-completion updates
+            confidence -= 0.05
+        }
+
+        // Commit source signals are more reliable
+        let hasCommitSource = signals.contains { $0.source.contains("commit") }
+        if hasCommitSource {
+            confidence += 0.05
+        }
+
+        // Cap confidence at 0.95 if any signals present (leave room for uncertainty)
+        if !signals.isEmpty && confidence > 0.95 {
+            confidence = 0.95
         }
 
         return min(max(confidence, 0.0), 1.0)
     }
 
-    /// Validate state transition makes sense
+    /// Validate state transition makes sense based on state machine rules
+    /// Prevents invalid transitions like DONE -> IN_PROGRESS without reopen signal
     private func validateStateTransition(
         from currentState: ProgressState?,
         to newState: ProgressState,
         signals: [ProgressSignal]
     ) -> Bool {
-        // Stub - will be enhanced in Task 2
         guard let current = currentState else { return true }
 
-        // DONE -> IN_PROGRESS: Requires reopening signal
-        if current == .done && newState == .inProgress {
-            let hasReopenSignal = signals.contains {
-                $0.context.lowercased().contains("reopen") ||
-                $0.context.lowercased().contains("revert")
-            }
-            return hasReopenSignal
+        // Same state is always valid
+        if current == newState {
+            return true
         }
+
+        switch (current, newState) {
+        // DONE -> IN_PROGRESS: Requires reopening signal
+        case (.done, .inProgress):
+            let reopenKeywords = ["reopen", "revert", "rollback", "undo", "reverted", "reopened", "back to"]
+            return signals.contains { signal in
+                reopenKeywords.contains { keyword in
+                    signal.context.lowercased().contains(keyword)
+                }
+            }
+
+        // DONE -> NOT_STARTED: Invalid (task was completed)
+        case (.done, .notStarted):
+            return false
+
+        // DONE -> BLOCKED: Requires explicit blocker after completion
+        case (.done, .blocked):
+            // Only allow if there's a recent blocker signal
+            let recentBlocker = signals.filter { $0.type == .blocker }.contains {
+                Date().timeIntervalSince($0.detectedAt) < 24 * 60 * 60
+            }
+            return recentBlocker
 
         // NOT_STARTED -> DONE: Allowed (quick tasks)
-        // BLOCKED -> DONE: Allowed (blocker resolved)
-        // Any -> STALE: Only from IN_PROGRESS
-        if newState == .stale && current != .inProgress {
-            return false
-        }
+        case (.notStarted, .done):
+            return true
 
-        return true
+        // NOT_STARTED -> STALE: Invalid (can't be stale if never started)
+        case (.notStarted, .stale):
+            return false
+
+        // BLOCKED -> DONE: Allowed (blocker resolved)
+        case (.blocked, .done):
+            return true
+
+        // BLOCKED -> IN_PROGRESS: Requires activity signal
+        case (.blocked, .inProgress):
+            return signals.contains { $0.type == .activity }
+
+        // IN_PROGRESS -> STALE: Allowed (no recent activity)
+        case (.inProgress, .stale):
+            return true
+
+        // STALE -> IN_PROGRESS: Requires activity signal
+        case (.stale, .inProgress):
+            return signals.contains { $0.type == .activity }
+
+        // STALE -> DONE: Requires completion signal
+        case (.stale, .done):
+            return signals.contains { $0.type == .completion }
+
+        // All other transitions are allowed by default
+        default:
+            return true
+        }
     }
 }
 
