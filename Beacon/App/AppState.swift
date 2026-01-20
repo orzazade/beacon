@@ -33,6 +33,9 @@ class AppState: ObservableObject {
     /// Currently selected tab
     @Published var selectedTab: Tab
 
+    /// Selected item ID for navigation from briefing to task detail
+    @Published var selectedItemId: String?
+
     /// Indicates whether there are unread notifications
     @Published var hasNotifications: Bool = false
 
@@ -41,6 +44,9 @@ class AppState: ObservableObject {
 
     /// Focus Mode observer for detecting Do Not Disturb state
     let focusModeObserver = FocusModeObserver()
+
+    /// Briefing settings reference
+    private let briefingSettings = BriefingSettings.shared
 
     init() {
         // Set smart default tab based on time of day
@@ -69,5 +75,38 @@ class AppState: ObservableObject {
     /// Check if Focus Mode is active
     var isFocusModeActive: Bool {
         focusModeObserver.isFocusModeActive
+    }
+
+    // MARK: - Briefing Integration
+
+    /// Handle briefing generation event
+    /// Switches to Briefing tab if before 10am and autoShowTab is enabled
+    func onBriefingGenerated(_ briefing: BriefingContent) {
+        let hour = Calendar.current.component(.hour, from: Date())
+
+        // Auto-switch to Briefing tab if enabled and before 10am
+        if briefingSettings.autoShowTab && hour < 10 {
+            selectedTab = .briefing
+        }
+    }
+
+    /// Set up briefing callback with AIManager
+    /// Call this after AI services are initialized
+    func setupBriefingCallback() {
+        AIManager.shared.onBriefingGenerated { [weak self] briefing in
+            self?.onBriefingGenerated(briefing)
+        }
+    }
+
+    /// Navigate to a specific item from briefing
+    /// Switches to Tasks tab and sets selectedItemId
+    func navigateToItem(itemId: String) {
+        selectedItemId = itemId
+        selectedTab = .tasks
+    }
+
+    /// Clear selected item after navigation completes
+    func clearSelectedItem() {
+        selectedItemId = nil
     }
 }
