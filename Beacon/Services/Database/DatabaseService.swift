@@ -1215,4 +1215,338 @@ actor DatabaseService {
 
         return SearchResult(item: item, similarity: similarity)
     }
+
+    // MARK: - Briefing Operations
+
+    /// Store a briefing in the cache
+    func storeBriefing(_ briefing: BriefingContent) async throws {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        // Encode content to JSON
+        let contentJSON: String
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(briefing)
+            contentJSON = String(data: data, encoding: .utf8) ?? "{}"
+        } catch {
+            throw DatabaseError.queryFailed("Failed to encode briefing: \(error)")
+        }
+
+        let escapedContent = contentJSON.replacingOccurrences(of: "'", with: "''")
+
+        let insertSQL = """
+            INSERT INTO beacon_briefings (
+                id, content, generated_at, expires_at, tokens_used, model_used
+            ) VALUES (
+                '\(briefing.id.uuidString)',
+                '\(escapedContent)'::jsonb,
+                '\(ISO8601DateFormatter().string(from: briefing.generatedAt))',
+                '\(ISO8601DateFormatter().string(from: briefing.expiresAt))',
+                \(briefing.tokensUsed.map { String($0) } ?? "NULL"),
+                '\(briefing.modelUsed)'
+            )
+            """
+
+        do {
+            _ = try await client.query(PostgresQuery(unsafeSQL: insertSQL))
+            logger.info("Stored briefing \(briefing.id)")
+        } catch {
+            logger.error("Failed to store briefing: \(String(reflecting: error))")
+            throw DatabaseError.insertFailed
+        }
+    }
+
+    /// Get the latest valid (non-expired) cached briefing
+    func getLatestValidBriefing() async throws -> BriefingContent? {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = """
+            SELECT content::text, generated_at, expires_at, tokens_used, model_used
+            FROM beacon_briefings
+            WHERE expires_at > NOW()
+            ORDER BY generated_at DESC
+            LIMIT 1
+            """
+
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+        for try await row in rows {
+            return try decodeBriefingContent(from: row)
+        }
+        return nil
+    }
+
+    /// Get the timestamp of the most recent briefing (even if expired)
+    func getLatestBriefingTime() async throws -> Date? {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = """
+            SELECT generated_at FROM beacon_briefings
+            ORDER BY generated_at DESC
+            LIMIT 1
+            """
+
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+        for try await row in rows {
+            return try row.decode(Date.self)
+        }
+        return nil
+    }
+
+    /// Get items with specific priority levels (for briefing aggregation)
+    func getItemsWithPriorityLevels(levels: [String], limit: Int) async throws -> [(BeaconItem, PriorityScore?)] {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        guard !levels.isEmpty else { return [] }
+
+        let levelsList = levels.map { "'\($0)'" }.joined(separator: ",")
+
+        let querySQL = """
+            SELECT bi.id::text, bi.item_type, bi.source, bi.external_id, bi.title, bi.content,
+                   bi.summary, bi.metadata::text, bi.created_at, bi.updated_at, bi.indexed_at,
+                   ps.id::text, ps.item_id::text, ps.level::text, ps.confidence, ps.reasoning,
+                   ps.signals::text, ps.is_manual_override, ps.analyzed_at, ps.model_used, ps.token_cost
+            FROM beacon_items bi
+            INNER JOIN beacon_priority_scores ps ON bi.id = ps.item_id
+            LEFT JOIN beacon_progress_scores prs ON bi.id = prs.item_id
+            LEFT JOIN snoozed_tasks st ON bi.external_id = st.task_id AND bi.source = st.task_source
+            WHERE ps.level::text IN (\(levelsList))
+              AND bi.item_type != 'commit'
+              AND (prs.state IS NULL OR prs.state != 'done')
+              AND (st.snooze_until IS NULL OR st.snooze_until < NOW())
+            ORDER BY
+                CASE ps.level::text
+                    WHEN 'P0' THEN 0
+                    WHEN 'P1' THEN 1
+                    WHEN 'P2' THEN 2
+                    ELSE 3
+                END,
+                ps.confidence DESC
+            LIMIT \(limit)
+            """
+
+        var results: [(BeaconItem, PriorityScore?)] = []
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+
+        for try await row in rows {
+            let result = try decodeBeaconItemWithPriorityScore(from: row)
+            results.append(result)
+        }
+
+        return results
+    }
+
+    /// Get items with upcoming deadlines (for briefing)
+    func getItemsWithUpcomingDeadlines(daysAhead: Int, limit: Int) async throws -> [(BeaconItem, Date?)] {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = """
+            SELECT bi.id::text, bi.item_type, bi.source, bi.external_id, bi.title, bi.content,
+                   bi.summary, bi.metadata::text, bi.created_at, bi.updated_at, bi.indexed_at,
+                   (bi.metadata->>'due_date')::timestamptz as due_date
+            FROM beacon_items bi
+            LEFT JOIN beacon_progress_scores prs ON bi.id = prs.item_id
+            WHERE bi.metadata->>'due_date' IS NOT NULL
+              AND (bi.metadata->>'due_date')::timestamptz > NOW()
+              AND (bi.metadata->>'due_date')::timestamptz < NOW() + INTERVAL '\(daysAhead) days'
+              AND (prs.state IS NULL OR prs.state != 'done')
+            ORDER BY (bi.metadata->>'due_date')::timestamptz ASC
+            LIMIT \(limit)
+            """
+
+        var results: [(BeaconItem, Date?)] = []
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+
+        for try await row in rows {
+            let result = try decodeBeaconItemWithDueDate(from: row)
+            results.append(result)
+        }
+
+        return results
+    }
+
+    /// Get new high-priority items since a given date (for "new since last briefing")
+    func getNewHighPriorityItemsSince(date: Date, limit: Int) async throws -> [(BeaconItem, PriorityScore?)] {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let dateStr = ISO8601DateFormatter().string(from: date)
+
+        let querySQL = """
+            SELECT bi.id::text, bi.item_type, bi.source, bi.external_id, bi.title, bi.content,
+                   bi.summary, bi.metadata::text, bi.created_at, bi.updated_at, bi.indexed_at,
+                   ps.id::text, ps.item_id::text, ps.level::text, ps.confidence, ps.reasoning,
+                   ps.signals::text, ps.is_manual_override, ps.analyzed_at, ps.model_used, ps.token_cost
+            FROM beacon_items bi
+            INNER JOIN beacon_priority_scores ps ON bi.id = ps.item_id
+            WHERE ps.level::text IN ('P0', 'P1')
+              AND bi.created_at > '\(dateStr)'
+              AND bi.item_type != 'commit'
+            ORDER BY bi.created_at DESC
+            LIMIT \(limit)
+            """
+
+        var results: [(BeaconItem, PriorityScore?)] = []
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+
+        for try await row in rows {
+            let result = try decodeBeaconItemWithPriorityScore(from: row)
+            results.append(result)
+        }
+
+        return results
+    }
+
+    /// Get items with a specific progress state (blocked, stale, etc.)
+    func getItemsWithProgressState(_ state: ProgressState, limit: Int) async throws -> [(BeaconItem, ProgressScore?)] {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = """
+            SELECT bi.id::text, bi.item_type, bi.source, bi.external_id, bi.title, bi.content,
+                   bi.summary, bi.metadata::text, bi.created_at, bi.updated_at, bi.indexed_at,
+                   bps.id::text, bps.item_id::text, bps.state::text, bps.confidence, bps.reasoning,
+                   bps.signals::text, bps.is_manual_override, bps.inferred_at, bps.last_activity_at, bps.model_used
+            FROM beacon_items bi
+            INNER JOIN beacon_progress_scores bps ON bi.id = bps.item_id
+            WHERE bps.state = '\(state.rawValue)'
+            ORDER BY bps.last_activity_at ASC NULLS FIRST
+            LIMIT \(limit)
+            """
+
+        var results: [(BeaconItem, ProgressScore?)] = []
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+
+        for try await row in rows {
+            let result = try decodeBeaconItemWithProgressScore(from: row)
+            results.append((result.0, result.1))
+        }
+
+        return results
+    }
+
+    // MARK: - Briefing Decoding Helpers
+
+    private func decodeBriefingContent(from row: PostgresRow) throws -> BriefingContent {
+        let (contentJSON, generatedAt, expiresAt, tokensUsed, modelUsed) =
+            try row.decode((String, Date, Date, Int?, String?).self)
+
+        guard let data = contentJSON.data(using: .utf8) else {
+            throw DatabaseError.queryFailed("Invalid briefing JSON")
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(BriefingContent.self, from: data)
+    }
+
+    private func decodeBeaconItemWithPriorityScore(from row: PostgresRow) throws -> (BeaconItem, PriorityScore?) {
+        // Decode all columns: item (11) + priority score (10)
+        let (idStr, itemType, source, externalId, title, content, summary, metadataJSON, createdAt, updatedAt, indexedAt,
+             scoreIdStr, scoreItemIdStr, levelStr, confidence, reasoning, signalsJSON, isManual, analyzedAt, scoreModelUsed, tokenCost) =
+            try row.decode((String, String, String, String?, String, String?, String?, String?, Date, Date, Date?,
+                           String?, String?, String?, Float?, String?, String?, Bool?, Date?, String?, Int?).self)
+
+        // Decode BeaconItem
+        guard let itemId = UUID(uuidString: idStr) else {
+            throw DatabaseError.queryFailed("Invalid UUID format")
+        }
+
+        var metadata: [String: String]?
+        if let json = metadataJSON, let data = json.data(using: String.Encoding.utf8) {
+            metadata = try? JSONDecoder().decode([String: String].self, from: data)
+        }
+
+        let item = BeaconItem(
+            id: itemId,
+            itemType: itemType,
+            source: source,
+            externalId: externalId,
+            title: title,
+            content: content,
+            summary: summary,
+            metadata: metadata,
+            embedding: nil,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            indexedAt: indexedAt
+        )
+
+        // Decode PriorityScore if present
+        var score: PriorityScore?
+        if let scoreIdStr = scoreIdStr,
+           let scoreId = UUID(uuidString: scoreIdStr),
+           let scoreItemIdStr = scoreItemIdStr,
+           let scoreItemId = UUID(uuidString: scoreItemIdStr),
+           let levelStr = levelStr,
+           let level = AIPriorityLevel(from: levelStr),
+           let confidence = confidence,
+           let analyzedAt = analyzedAt {
+
+            var signals: [PrioritySignal] = []
+            if let json = signalsJSON, let data = json.data(using: .utf8) {
+                signals = (try? JSONDecoder().decode([PrioritySignal].self, from: data)) ?? []
+            }
+
+            score = PriorityScore(
+                id: scoreId,
+                itemId: scoreItemId,
+                level: level,
+                confidence: confidence,
+                reasoning: reasoning ?? "",
+                signals: signals,
+                isManualOverride: isManual ?? false,
+                analyzedAt: analyzedAt,
+                modelUsed: scoreModelUsed ?? "unknown",
+                tokenCost: tokenCost
+            )
+        }
+
+        return (item, score)
+    }
+
+    private func decodeBeaconItemWithDueDate(from row: PostgresRow) throws -> (BeaconItem, Date?) {
+        // Decode all columns: item (11) + due_date (1)
+        let (idStr, itemType, source, externalId, title, content, summary, metadataJSON, createdAt, updatedAt, indexedAt, dueDate) =
+            try row.decode((String, String, String, String?, String, String?, String?, String?, Date, Date, Date?, Date?).self)
+
+        // Decode BeaconItem
+        guard let itemId = UUID(uuidString: idStr) else {
+            throw DatabaseError.queryFailed("Invalid UUID format")
+        }
+
+        var metadata: [String: String]?
+        if let json = metadataJSON, let data = json.data(using: String.Encoding.utf8) {
+            metadata = try? JSONDecoder().decode([String: String].self, from: data)
+        }
+
+        let item = BeaconItem(
+            id: itemId,
+            itemType: itemType,
+            source: source,
+            externalId: externalId,
+            title: title,
+            content: content,
+            summary: summary,
+            metadata: metadata,
+            embedding: nil,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            indexedAt: indexedAt
+        )
+
+        return (item, dueDate)
+    }
 }
