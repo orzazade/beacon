@@ -29,6 +29,9 @@ class AIManager: ObservableObject {
     private let briefingService: BriefingService
     private let briefingScheduler: BriefingScheduler
 
+    // Chat (lazy initialized to avoid circular dependency)
+    private var _chatService: ChatService?
+
     // State
     @Published var isOllamaAvailable = false
     @Published var isOpenRouterConfigured = false
@@ -47,7 +50,8 @@ class AIManager: ObservableObject {
         progressAnalysis: ProgressAnalysisService? = nil,
         progressPipeline: ProgressPipeline? = nil,
         briefingService: BriefingService? = nil,
-        briefingScheduler: BriefingScheduler? = nil
+        briefingScheduler: BriefingScheduler? = nil,
+        chatService: ChatService? = nil
     ) {
         self.ollama = ollama
         self.openRouter = openRouter
@@ -64,6 +68,9 @@ class AIManager: ObservableObject {
         )
         self.briefingService = briefingService ?? BriefingService(database: database, openRouter: openRouter)
         self.briefingScheduler = briefingScheduler ?? BriefingScheduler(briefingService: self.briefingService)
+
+        // Chat service is initialized lazily via the chat accessor to avoid circular dependency
+        self._chatService = chatService
     }
 
     // MARK: - Initialization
@@ -85,16 +92,28 @@ class AIManager: ObservableObject {
         }
 
         // Connect database
-        try? await database.connect()
-
-        // Load VIP emails for priority analysis
-        if let vipEmails = try? await database.getVIPEmails() {
-            await priorityPipeline.setVIPEmails(vipEmails)
+        do {
+            try await database.connect()
+            print("[AIManager] Database connected successfully")
+        } catch {
+            print("[AIManager] Database connection failed: \(error)")
         }
 
-        // Start briefing scheduler if enabled and OpenRouter is configured
-        if isOpenRouterConfigured && BriefingSettings.shared.isEnabled {
-            startBriefingScheduler()
+        // Only proceed with database-dependent operations if connected
+        let dbConnected = await database.connectionStatus
+
+        if dbConnected {
+            // Load VIP emails for priority analysis
+            if let vipEmails = try? await database.getVIPEmails() {
+                await priorityPipeline.setVIPEmails(vipEmails)
+            }
+
+            // Start briefing scheduler if enabled, OpenRouter is configured, AND database is connected
+            if isOpenRouterConfigured && BriefingSettings.shared.isEnabled {
+                startBriefingScheduler()
+            }
+        } else {
+            print("[AIManager] Skipping database-dependent services (database not connected)")
         }
     }
 
@@ -261,6 +280,33 @@ class AIManager: ObservableObject {
     /// Trigger immediate briefing generation
     func triggerBriefingNow() async {
         await briefingScheduler.triggerNow()
+    }
+
+    // MARK: - Chat
+
+    /// Get the chat service for conversation management
+    /// Lazily initialized to avoid circular dependency with AIManager
+    var chat: ChatService {
+        if _chatService == nil {
+            _chatService = ChatService(database: database, aiManager: self)
+        }
+        return _chatService!
+    }
+
+    /// Access to OpenRouter for direct streaming
+    var router: OpenRouterService {
+        openRouter
+    }
+
+    /// Stream chat with RAG context (convenience method)
+    func streamChatWithContext(
+        messages: [OpenRouterMessage],
+        contextQuery: String?,
+        model: OpenRouterModel = .claudeSonnet
+    ) async -> AsyncThrowingStream<String, Error> {
+        // Delegate to openRouter.streamChat
+        // Context injection happens in ChatViewModel
+        await openRouter.streamChat(messages: messages, model: model)
     }
 
     // MARK: - Embeddings
