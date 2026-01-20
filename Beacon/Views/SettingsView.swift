@@ -14,12 +14,17 @@ struct SettingsView: View {
                     Label("Accounts", systemImage: "person.crop.circle")
                 }
 
+            AIServicesSettingsView()
+                .tabItem {
+                    Label("AI Services", systemImage: "brain")
+                }
+
             ShortcutsSettingsView()
                 .tabItem {
                     Label("Shortcuts", systemImage: "keyboard")
                 }
         }
-        .frame(width: 450, height: 450)
+        .frame(width: 450, height: 500)
     }
 }
 
@@ -199,6 +204,182 @@ struct AccountsSettingsView: View {
         Task {
             await authManager.configureDevOps(organization: devOpsOrganization, project: devOpsProject)
         }
+    }
+}
+
+/// AI Services settings tab for OpenRouter and database configuration
+struct AIServicesSettingsView: View {
+    @StateObject private var viewModel = AIServicesSettingsViewModel()
+
+    var body: some View {
+        Form {
+            // OpenRouter Section
+            Section("OpenRouter API") {
+                HStack {
+                    Image(systemName: "circle.fill")
+                        .foregroundColor(viewModel.isOpenRouterConfigured ? .green : .red)
+                        .font(.caption)
+
+                    if viewModel.isOpenRouterConfigured {
+                        Text("Connected")
+                            .foregroundColor(.secondary)
+                        if let credits = viewModel.openRouterCredits {
+                            Text("• $\(credits, specifier: "%.2f") remaining")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                    } else {
+                        Text("Not configured")
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+                }
+
+                if viewModel.isOpenRouterConfigured {
+                    Button("Remove API Key") {
+                        Task { await viewModel.removeAPIKey() }
+                    }
+                    .foregroundColor(.red)
+                } else {
+                    SecureField("API Key", text: $viewModel.apiKeyInput)
+                        .textFieldStyle(.roundedBorder)
+
+                    Button("Save API Key") {
+                        Task { await viewModel.saveAPIKey() }
+                    }
+                    .disabled(viewModel.apiKeyInput.isEmpty || viewModel.isSaving)
+                }
+
+                Link("Get API key from OpenRouter",
+                     destination: URL(string: "https://openrouter.ai/keys")!)
+                    .font(.caption)
+            }
+
+            // Database Section
+            Section("Database (PostgreSQL)") {
+                HStack {
+                    Image(systemName: "circle.fill")
+                        .foregroundColor(viewModel.isDatabaseConnected ? .green : .red)
+                        .font(.caption)
+
+                    Text(viewModel.isDatabaseConnected ? "Connected" : "Not connected")
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    if !viewModel.isDatabaseConnected {
+                        Button("Retry") {
+                            Task { await viewModel.reconnectDatabase() }
+                        }
+                        .controlSize(.small)
+                    }
+                }
+
+                if !viewModel.isDatabaseConnected {
+                    Text("Start PostgreSQL with: cd ~/Projects/dev-stacks && docker-compose up -d")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+            }
+
+            // Ollama Section
+            Section("Ollama (Local LLM)") {
+                HStack {
+                    Image(systemName: "circle.fill")
+                        .foregroundColor(viewModel.isOllamaAvailable ? .green : .yellow)
+                        .font(.caption)
+
+                    if viewModel.isOllamaAvailable {
+                        Text("Running")
+                            .foregroundColor(.secondary)
+                        if let version = viewModel.ollamaVersion {
+                            Text("• v\(version)")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                    } else {
+                        Text("Not running (optional)")
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+                }
+
+                if !viewModel.isOllamaAvailable {
+                    Text("Ollama is optional - used for local embeddings")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            // Status Section
+            if let error = viewModel.error {
+                Section {
+                    Text(error)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .onAppear {
+            Task { await viewModel.refresh() }
+        }
+    }
+}
+
+/// ViewModel for AI Services settings
+@MainActor
+class AIServicesSettingsViewModel: ObservableObject {
+    @Published var isOpenRouterConfigured = false
+    @Published var openRouterCredits: Double?
+    @Published var isDatabaseConnected = false
+    @Published var isOllamaAvailable = false
+    @Published var ollamaVersion: String?
+    @Published var apiKeyInput = ""
+    @Published var isSaving = false
+    @Published var error: String?
+
+    func refresh() async {
+        let aiManager = AIManager.shared
+        isOpenRouterConfigured = aiManager.isOpenRouterConfigured
+        openRouterCredits = aiManager.openRouterCredits
+        isOllamaAvailable = aiManager.isOllamaAvailable
+        ollamaVersion = aiManager.ollamaVersion
+        isDatabaseConnected = await aiManager.isDatabaseConnected
+    }
+
+    func saveAPIKey() async {
+        guard !apiKeyInput.isEmpty else { return }
+        isSaving = true
+        error = nil
+
+        do {
+            try await AIManager.shared.setOpenRouterAPIKey(apiKeyInput)
+            apiKeyInput = ""
+            await refresh()
+        } catch {
+            self.error = "Failed to save API key: \(error.localizedDescription)"
+        }
+
+        isSaving = false
+    }
+
+    func removeAPIKey() async {
+        do {
+            try await AIManager.shared.removeOpenRouterAPIKey()
+            await refresh()
+        } catch {
+            self.error = "Failed to remove API key: \(error.localizedDescription)"
+        }
+    }
+
+    func reconnectDatabase() async {
+        // Trigger service check which includes database connection
+        await AIManager.shared.checkServices()
+        await refresh()
     }
 }
 

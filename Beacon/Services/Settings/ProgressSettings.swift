@@ -97,7 +97,7 @@ class ProgressSettings: ObservableObject {
            let model = OpenRouterModel(rawValue: modelRaw) {
             self.selectedModel = model
         } else {
-            self.selectedModel = .gpt52Nano  // Default per research recommendation
+            self.selectedModel = .gemma2Free  // Default to free model
         }
     }
 
@@ -105,7 +105,10 @@ class ProgressSettings: ObservableObject {
 
     /// Models suitable for progress analysis (fast, cost-effective)
     static let availableModels: [OpenRouterModel] = [
-        .gpt52Nano,     // Recommended: $0.10/1M, best cost/quality
+        .gemma2Free,    // Free - no cost
+        .llama32Free,   // Free - no cost
+        .qwen25Free,    // Free - no cost
+        .gpt52Nano,     // $0.10/1M, best cost/quality
         .gpt4oMini,     // $0.15/1M, good alternative
         .claudeHaiku,   // $1.00/1M, good but 10x more expensive
         .gpt4o,         // $2.50/1M, best quality but expensive

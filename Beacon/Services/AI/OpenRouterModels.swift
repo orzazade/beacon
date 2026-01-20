@@ -222,7 +222,12 @@ struct OpenRouterKeyData: Codable {
 
 // MARK: - Available Models
 
-enum OpenRouterModel: String {
+enum OpenRouterModel: String, CaseIterable {
+    // Free models (no cost)
+    case gemma2Free = "google/gemma-2-9b-it:free"
+    case llama32Free = "meta-llama/llama-3.2-3b-instruct:free"
+    case qwen25Free = "qwen/qwen-2.5-7b-instruct:free"
+
     // Claude models
     case claudeOpus = "anthropic/claude-opus-4.5"
     case claudeSonnet = "anthropic/claude-sonnet-4"
@@ -240,6 +245,9 @@ enum OpenRouterModel: String {
 
     var displayName: String {
         switch self {
+        case .gemma2Free: return "Gemma 2 9B (Free)"
+        case .llama32Free: return "Llama 3.2 3B (Free)"
+        case .qwen25Free: return "Qwen 2.5 7B (Free)"
         case .claudeOpus: return "Claude Opus 4.5"
         case .claudeSonnet: return "Claude Sonnet 4"
         case .claudeHaiku: return "Claude 3.5 Haiku"
@@ -251,12 +259,20 @@ enum OpenRouterModel: String {
         case .deepseekR1: return "DeepSeek R1"
         }
     }
+
+    var isFree: Bool {
+        switch self {
+        case .gemma2Free, .llama32Free, .qwen25Free: return true
+        default: return false
+        }
+    }
 }
 
 extension OpenRouterModel {
     /// Input cost per million tokens
     var inputCostPerMillion: Double {
         switch self {
+        case .gemma2Free, .llama32Free, .qwen25Free: return 0.0  // Free models
         case .claudeOpus: return 15.00
         case .claudeSonnet: return 3.00
         case .claudeHaiku: return 1.00
@@ -272,6 +288,7 @@ extension OpenRouterModel {
     /// Output cost per million tokens
     var outputCostPerMillion: Double {
         switch self {
+        case .gemma2Free, .llama32Free, .qwen25Free: return 0.0  // Free models
         case .claudeOpus: return 75.00
         case .claudeSonnet: return 15.00
         case .claudeHaiku: return 5.00
@@ -291,6 +308,7 @@ extension OpenRouterModel {
         case .claudeOpus, .claudeSonnet: return true  // Sonnet 4.5+, Opus 4.1+
         case .claudeHaiku: return false  // Haiku 3.5 doesn't support
         case .deepseekR1: return false
+        case .gemma2Free, .llama32Free, .qwen25Free: return false  // Free models use text parsing
         }
     }
 }
