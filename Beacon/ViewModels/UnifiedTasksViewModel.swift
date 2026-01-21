@@ -84,8 +84,13 @@ class UnifiedTasksViewModel: ObservableObject {
         isLoading = true
         error = nil
 
-        // Load snoozed task IDs first
-        await loadSnoozedTasks()
+        // Load snoozed task IDs first - handle DB failure gracefully
+        do {
+            await loadSnoozedTasks()
+        } catch {
+            debugLog("[Tasks] Failed to load snoozed tasks: \(error)")
+            // Continue without snooze filtering
+        }
 
         var allTasks: [any UnifiedTask] = []
         var errors: [String] = []
@@ -183,34 +188,30 @@ class UnifiedTasksViewModel: ObservableObject {
             return date1 > date2
         }
 
-        // Persist tasks to database (non-blocking)
-        await persistTasksToDatabase(allTasks)
-
         isLoading = false
+
+        // Persist to database - non-blocking, don't fail load on persistence error
+        if !allTasks.isEmpty {
+            Task.detached(priority: .background) { [aiManager] in
+                do {
+                    let count = try await aiManager.storeTasks(allTasks)
+                    await MainActor.run {
+                        self.persistedItemCount = count
+                    }
+                    // Process embeddings in background (non-blocking)
+                    await self.processEmbeddingsInBackground()
+                    // Load scores after persistence
+                    await self.loadPriorityScores()
+                    await self.loadProgressScores()
+                } catch {
+                    debugLog("[Tasks] Failed to persist tasks: \(error)")
+                    // Continue - persistence failure shouldn't break UI
+                }
+            }
+        }
     }
 
     // MARK: - Database Persistence
-
-    /// Persist fetched tasks to database for AI processing
-    /// This runs after UI update to not block the user
-    private func persistTasksToDatabase(_ tasks: [any UnifiedTask]) async {
-        guard !tasks.isEmpty else { return }
-
-        do {
-            let count = try await aiManager.storeTasks(tasks)
-            persistedItemCount = count
-
-            // Trigger background embedding generation
-            await processEmbeddingsInBackground()
-
-            // Load priority and progress scores after persistence
-            await loadPriorityScores()
-            await loadProgressScores()
-        } catch {
-            // Database persistence failure shouldn't affect UI
-            print("Failed to persist tasks to database: \(error)")
-        }
-    }
 
     /// Process embeddings for stored items in background
     /// This generates vector embeddings for semantic search

@@ -82,6 +82,19 @@ class BriefingViewModel: ObservableObject {
             await updateRefreshState()
         } catch {
             handleError(error)
+
+            // If we don't have a cached briefing and load failed, show helpful message
+            if briefing == nil {
+                // Check service status for better error messaging
+                let dbConnected = await AIManager.shared.isDatabaseConnected
+                if !dbConnected {
+                    self.error = "Briefing requires database connection"
+                } else if !AIManager.shared.isOpenRouterConfigured {
+                    self.error = "Configure OpenRouter API key in Settings to enable briefings"
+                }
+                // Otherwise keep the original error from handleError
+            }
+            // If we have cached briefing, keep showing it (error only shows in UI if no briefing)
         }
 
         isLoading = false

@@ -39,30 +39,55 @@ class DashboardViewModel: ObservableObject {
     // MARK: - Public Methods
 
     /// Load dashboard counts from database
+    /// Gracefully handles database unavailability by resetting counts to 0
     func loadCounts() async {
         isLoading = true
         defer { isLoading = false }
 
-        do {
-            // P0 count: items with priority level .critical
-            let p0 = try await aiManager.getPriorityLevelCount(.p0)
-            p0Count = p0
-
-            // Stale count: items in progress with no recent activity
-            let staleIds = try await aiManager.getStaleItems()
-            staleCount = staleIds.count
-
-            // Progress state counts
-            let inProgress = try await aiManager.getProgressStateCount(.inProgress)
-            inProgressCount = inProgress
-
-            let pending = try await aiManager.getProgressStateCount(.notStarted)
-            pendingCount = pending
-
-            lastUpdated = Date()
-        } catch {
-            debugLog("[Dashboard] Error loading counts: \(error)")
+        // Don't fail completely if DB unavailable
+        guard await aiManager.isDatabaseConnected else {
+            // Reset counts to 0, don't show stale data
+            p0Count = 0
+            staleCount = 0
+            inProgressCount = 0
+            pendingCount = 0
+            debugLog("[Dashboard] Database not connected, resetting counts to 0")
+            return
         }
+
+        // P0 count: items with priority level .critical
+        do {
+            p0Count = try await aiManager.getPriorityLevelCount(.p0)
+        } catch {
+            p0Count = 0
+            debugLog("[Dashboard] P0 count failed: \(error)")
+        }
+
+        // Stale count: items in progress with no recent activity
+        do {
+            staleCount = (try await aiManager.getStaleItems()).count
+        } catch {
+            staleCount = 0
+            debugLog("[Dashboard] Stale count failed: \(error)")
+        }
+
+        // In progress count
+        do {
+            inProgressCount = try await aiManager.getProgressStateCount(.inProgress)
+        } catch {
+            inProgressCount = 0
+            debugLog("[Dashboard] In progress count failed: \(error)")
+        }
+
+        // Pending count
+        do {
+            pendingCount = try await aiManager.getProgressStateCount(.notStarted)
+        } catch {
+            pendingCount = 0
+            debugLog("[Dashboard] Pending count failed: \(error)")
+        }
+
+        lastUpdated = Date()
     }
 
     /// Start periodic refresh (every 5 minutes)

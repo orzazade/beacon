@@ -152,6 +152,21 @@ struct BriefingTab: View {
             // Greeting header
             BriefingGreeting(greeting: briefing.greeting)
 
+            // Degraded mode warning
+            if appState.isDegraded {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.caption)
+                    Text("Some features unavailable - check connection")
+                        .font(.caption)
+                }
+                .foregroundColor(.orange)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background(Color.orange.opacity(0.1))
+            }
+
             Divider()
 
             // Dashboard summary cards
