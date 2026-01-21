@@ -69,6 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_items_priority_pending
     WHERE priority_analyzed_at IS NULL OR updated_at > priority_analyzed_at;
 
 -- View: Items with their priority scores
+-- Note: i.priority_analyzed_at is from beacon_items, p.analyzed_at is from scores table
 CREATE OR REPLACE VIEW beacon_items_with_priority AS
 SELECT
     i.*,
@@ -77,7 +78,7 @@ SELECT
     p.reasoning as priority_reasoning,
     p.signals as priority_signals,
     p.is_manual_override as priority_is_manual,
-    p.analyzed_at as priority_analyzed_at,
+    p.analyzed_at as priority_score_analyzed_at,
     p.model_used as priority_model
 FROM beacon_items i
 LEFT JOIN beacon_priority_scores p ON i.id = p.item_id;

@@ -380,7 +380,7 @@ class AIServicesSettingsViewModel: ObservableObject {
     // Per-feature model selection - each feature now has its own model picker
     // See ModelSelectionSection for individual controls
     // This property is kept for backwards compatibility but no longer syncs globally
-    @Published var selectedModel: OpenRouterModel = .gemma2Free
+    @Published var selectedModel: OpenRouterModel = .nemotronFree
 
     func refresh() async {
         let aiManager = AIManager.shared

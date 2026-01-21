@@ -220,10 +220,16 @@ class ChatViewModel: ObservableObject {
         // 2. Get RAG context
         var contextString = ""
         do {
+            print("[Chat] Building RAG context for query: \(content.prefix(50))...")
+            print("[Chat] Ollama available: \(aiManager.isOllamaAvailable)")
             lastSearchResults = try await chatService.buildContext(for: content, limit: 5)
+            print("[Chat] RAG search returned \(lastSearchResults.count) results")
             contextString = await chatService.formatContextForPrompt(lastSearchResults)
+            if !lastSearchResults.isEmpty {
+                print("[Chat] First result: \(lastSearchResults[0].item.title) (similarity: \(lastSearchResults[0].similarity))")
+            }
         } catch {
-            print("Failed to build RAG context: \(error)")
+            print("[Chat] Failed to build RAG context: \(error)")
             contextString = "No context available."
             lastSearchResults = []
         }

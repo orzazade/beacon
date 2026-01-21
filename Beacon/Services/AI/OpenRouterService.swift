@@ -145,9 +145,30 @@ actor OpenRouterService {
 
                     let (bytes, response) = try await session.bytes(for: request)
 
-                    guard let httpResponse = response as? HTTPURLResponse,
-                          httpResponse.statusCode == 200 else {
+                    guard let httpResponse = response as? HTTPURLResponse else {
                         continuation.finish(throwing: OpenRouterError.invalidResponse)
+                        return
+                    }
+
+                    // Handle non-200 responses with better error info
+                    if httpResponse.statusCode != 200 {
+                        // Try to read error body
+                        var errorBody = ""
+                        for try await line in bytes.lines {
+                            errorBody += line
+                        }
+                        print("[OpenRouter] Error \(httpResponse.statusCode): \(errorBody)")
+
+                        switch httpResponse.statusCode {
+                        case 401:
+                            continuation.finish(throwing: OpenRouterError.streamingError("Invalid API key"))
+                        case 402:
+                            continuation.finish(throwing: OpenRouterError.insufficientCredits)
+                        case 429:
+                            continuation.finish(throwing: OpenRouterError.rateLimited)
+                        default:
+                            continuation.finish(throwing: OpenRouterError.streamingError("HTTP \(httpResponse.statusCode): \(errorBody)"))
+                        }
                         return
                     }
 

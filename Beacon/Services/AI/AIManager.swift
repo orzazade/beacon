@@ -564,6 +564,11 @@ class AIManager: ObservableObject {
         threshold: Float = 0.7,
         itemType: String? = nil
     ) async throws -> [SearchResult] {
+        // If Ollama status wasn't checked yet, check now
+        if !isOllamaAvailable {
+            isOllamaAvailable = await ollama.isRunning()
+        }
+
         guard isOllamaAvailable else {
             throw OllamaError.notRunning
         }

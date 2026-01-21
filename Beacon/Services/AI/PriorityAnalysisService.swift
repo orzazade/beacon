@@ -6,8 +6,8 @@ actor PriorityAnalysisService {
     private let openRouter: OpenRouterService
     private var vipEmails: Set<String> = []
 
-    /// Default model - GPT-5.2 Nano for optimal cost/quality balance
-    private var model: OpenRouterModel = .gpt52Nano
+    /// Default model - free model for cost efficiency
+    private var model: OpenRouterModel = .nemotronFree
 
     /// Batch size - 5-10 items optimal per research
     private let batchSize: Int = 10

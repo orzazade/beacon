@@ -6,8 +6,8 @@ actor ProgressAnalysisService {
     private let openRouter: OpenRouterService
     private let signalExtractor: ProgressSignalExtractor
 
-    /// Default model - GPT-5.2 Nano for optimal cost/quality balance (same as priority analysis)
-    private var model: OpenRouterModel = .gpt52Nano
+    /// Default model - free model for cost efficiency (same as priority analysis)
+    private var model: OpenRouterModel = .nemotronFree
 
     /// Batch size for efficiency
     private let batchSize: Int = 10

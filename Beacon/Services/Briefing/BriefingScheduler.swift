@@ -198,8 +198,19 @@ class BriefingScheduler: ObservableObject {
 
     // MARK: - Notifications
 
+    /// Check if we're running in a proper app bundle (notifications require this)
+    private var canUseNotifications: Bool {
+        // UNUserNotificationCenter requires a proper app bundle
+        // When running via `swift run`, bundleIdentifier is nil
+        Bundle.main.bundleIdentifier != nil
+    }
+
     /// Request notification permissions
     func requestNotificationPermission() {
+        guard canUseNotifications else {
+            print("[BriefingScheduler] Notifications unavailable (no app bundle)")
+            return
+        }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
             if let error = error {
                 print("[BriefingScheduler] Notification permission error: \(error)")
@@ -213,6 +224,11 @@ class BriefingScheduler: ObservableObject {
 
     /// Send macOS notification when briefing is ready
     private func sendBriefingNotification(_ briefing: BriefingContent) {
+        guard canUseNotifications else {
+            print("[BriefingScheduler] Skipping notification (no app bundle)")
+            return
+        }
+
         let content = UNMutableNotificationContent()
         content.title = "Morning Briefing Ready"
 

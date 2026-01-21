@@ -11,22 +11,28 @@ packages:
     from: "1.3.0"
   GoogleSignIn:
     url: https://github.com/google/GoogleSignIn-iOS
-    from: "7.0.0"
+    from: "8.0.0"
   KeychainAccess:
     url: https://github.com/kishikawakatsumi/KeychainAccess
     from: "4.2.2"
   KeyboardShortcuts:
     url: https://github.com/sindresorhus/KeyboardShortcuts
     from: "2.0.0"
-  PostgresNIO:
+  postgres-nio:
     url: https://github.com/vapor/postgres-nio
     from: "1.21.0"
   Yams:
     url: https://github.com/jpsim/Yams
     from: "6.0.0"
-  AsyncAlgorithms:
+  swift-async-algorithms:
     url: https://github.com/apple/swift-async-algorithms
     from: "1.0.0"
+  swift-markdown-ui:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    from: "2.4.0"
+  swift-log:
+    url: https://github.com/apple/swift-log
+    from: "1.5.0"
 
 targets:
   Beacon:
@@ -46,9 +52,15 @@ targets:
       - package: GoogleSignIn
       - package: KeychainAccess
       - package: KeyboardShortcuts
-      - package: PostgresNIO
+      - package: postgres-nio
+        product: PostgresNIO
       - package: Yams
-      - package: AsyncAlgorithms
+      - package: swift-async-algorithms
+        product: AsyncAlgorithms
+      - package: swift-markdown-ui
+        product: MarkdownUI
+      - package: swift-log
+        product: Logging
     info:
       path: Info.plist
     entitlements:

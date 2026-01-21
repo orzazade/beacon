@@ -223,10 +223,10 @@ struct OpenRouterKeyData: Codable {
 // MARK: - Available Models
 
 enum OpenRouterModel: String, CaseIterable {
-    // Free models (no cost)
-    case gemma2Free = "google/gemma-2-9b-it:free"
-    case llama32Free = "meta-llama/llama-3.2-3b-instruct:free"
-    case qwen25Free = "qwen/qwen-2.5-7b-instruct:free"
+    // Free models (no cost) - updated Jan 2026
+    case nemotronFree = "nvidia/nemotron-3-nano-30b-a3b:free"
+    case devstralFree = "mistralai/devstral-2512:free"
+    case liquidFree = "liquid/lfm-2.5-1.2b-instruct:free"
 
     // Claude models
     case claudeOpus = "anthropic/claude-opus-4.5"
@@ -236,7 +236,6 @@ enum OpenRouterModel: String, CaseIterable {
     // OpenAI models
     case gpt4o = "openai/gpt-4o"
     case gpt4oMini = "openai/gpt-4o-mini"
-    case gpt52Nano = "openai/gpt-5.2-nano"  // Best value for priority analysis
     case o1 = "openai/o1"
     case o1Mini = "openai/o1-mini"
 
@@ -245,15 +244,14 @@ enum OpenRouterModel: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .gemma2Free: return "Gemma 2 9B (Free)"
-        case .llama32Free: return "Llama 3.2 3B (Free)"
-        case .qwen25Free: return "Qwen 2.5 7B (Free)"
+        case .nemotronFree: return "Nemotron Nano 30B (Free)"
+        case .devstralFree: return "Devstral (Free)"
+        case .liquidFree: return "Liquid LFM 1.2B (Free)"
         case .claudeOpus: return "Claude Opus 4.5"
         case .claudeSonnet: return "Claude Sonnet 4"
         case .claudeHaiku: return "Claude 3.5 Haiku"
         case .gpt4o: return "GPT-4o"
         case .gpt4oMini: return "GPT-4o Mini"
-        case .gpt52Nano: return "GPT-5.2 Nano"
         case .o1: return "o1"
         case .o1Mini: return "o1-mini"
         case .deepseekR1: return "DeepSeek R1"
@@ -262,7 +260,7 @@ enum OpenRouterModel: String, CaseIterable {
 
     var isFree: Bool {
         switch self {
-        case .gemma2Free, .llama32Free, .qwen25Free: return true
+        case .nemotronFree, .devstralFree, .liquidFree: return true
         default: return false
         }
     }
@@ -272,13 +270,12 @@ extension OpenRouterModel {
     /// Input cost per million tokens
     var inputCostPerMillion: Double {
         switch self {
-        case .gemma2Free, .llama32Free, .qwen25Free: return 0.0  // Free models
+        case .nemotronFree, .devstralFree, .liquidFree: return 0.0  // Free models
         case .claudeOpus: return 15.00
         case .claudeSonnet: return 3.00
         case .claudeHaiku: return 1.00
         case .gpt4o: return 2.50
         case .gpt4oMini: return 0.15
-        case .gpt52Nano: return 0.10  // Best value - GPT-5.2 Nano
         case .o1: return 15.00
         case .o1Mini: return 3.00
         case .deepseekR1: return 0.55
@@ -288,13 +285,12 @@ extension OpenRouterModel {
     /// Output cost per million tokens
     var outputCostPerMillion: Double {
         switch self {
-        case .gemma2Free, .llama32Free, .qwen25Free: return 0.0  // Free models
+        case .nemotronFree, .devstralFree, .liquidFree: return 0.0  // Free models
         case .claudeOpus: return 75.00
         case .claudeSonnet: return 15.00
         case .claudeHaiku: return 5.00
         case .gpt4o: return 10.00
         case .gpt4oMini: return 0.60
-        case .gpt52Nano: return 0.40  // Best value - GPT-5.2 Nano
         case .o1: return 60.00
         case .o1Mini: return 12.00
         case .deepseekR1: return 2.19
@@ -304,11 +300,11 @@ extension OpenRouterModel {
     /// Whether model supports structured JSON outputs
     var supportsStructuredOutputs: Bool {
         switch self {
-        case .gpt4o, .gpt4oMini, .gpt52Nano, .o1, .o1Mini: return true
+        case .gpt4o, .gpt4oMini, .o1, .o1Mini: return true
         case .claudeOpus, .claudeSonnet: return true  // Sonnet 4.5+, Opus 4.1+
         case .claudeHaiku: return false  // Haiku 3.5 doesn't support
         case .deepseekR1: return false
-        case .gemma2Free, .llama32Free, .qwen25Free: return false  // Free models use text parsing
+        case .nemotronFree, .devstralFree, .liquidFree: return false  // Free models use text parsing
         }
     }
 }

@@ -89,7 +89,7 @@ actor ChatService {
         return try await aiManager.searchSimilar(
             query: query,
             limit: limit,
-            threshold: 0.6  // Lower threshold for chat to get more context
+            threshold: 0.4  // Low threshold to capture more context for chat
         )
     }
 

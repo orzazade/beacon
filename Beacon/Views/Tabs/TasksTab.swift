@@ -8,6 +8,7 @@ struct TasksTab: View {
     @State private var showSnoozeSheet = false
     @State private var isPerformingAction = false
     @State private var actionError: String?
+    @State private var hasLoadedInitially = false
 
     init(authManager: AuthManager) {
         self.authManager = authManager
@@ -85,15 +86,22 @@ struct TasksTab: View {
             Text(actionError ?? "")
         }
         .task {
+            // Only load once on first appear, then use manual refresh
+            guard !hasLoadedInitially else { return }
+            hasLoadedInitially = true
             await viewModel.loadAllTasks()
         }
         .onChange(of: authManager.isMicrosoftSignedIn) { _, isSignedIn in
-            if isSignedIn {
+            // Only auto-refresh on first sign-in, not on every tab switch
+            if isSignedIn && !hasLoadedInitially {
+                hasLoadedInitially = true
                 Task { await viewModel.loadAllTasks() }
             }
         }
         .onChange(of: authManager.isGoogleSignedIn) { _, isSignedIn in
-            if isSignedIn {
+            // Only auto-refresh on first sign-in, not on every tab switch
+            if isSignedIn && !hasLoadedInitially {
+                hasLoadedInitially = true
                 Task { await viewModel.loadAllTasks() }
             }
         }

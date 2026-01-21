@@ -26,17 +26,23 @@ struct ChatTab: View {
                 chatContent
             }
 
-            // Input area (always visible when thread selected)
-            if viewModel.currentThread != nil {
-                ChatInputView(
-                    text: $viewModel.inputText,
-                    characterLimit: viewModel.characterLimit,
-                    isStreaming: viewModel.isStreaming,
-                    canSend: viewModel.canSend,
-                    onSend: { viewModel.sendMessage() },
-                    onStop: { viewModel.stopGeneration() }
-                )
-            }
+            // Input area (always visible)
+            ChatInputView(
+                text: $viewModel.inputText,
+                characterLimit: viewModel.characterLimit,
+                isStreaming: viewModel.isStreaming,
+                canSend: viewModel.canSend,
+                onSend: {
+                    Task {
+                        // Create thread if needed before sending
+                        if viewModel.currentThread == nil {
+                            await viewModel.createNewThread()
+                        }
+                        viewModel.sendMessage()
+                    }
+                },
+                onStop: { viewModel.stopGeneration() }
+            )
         }
         .actionConfirmation(
             isPresented: $viewModel.showingActionConfirmation,

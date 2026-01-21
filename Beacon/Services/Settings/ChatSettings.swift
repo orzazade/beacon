@@ -26,14 +26,13 @@ class ChatSettings: ObservableObject {
     /// Models suitable for chat conversations (quality-focused)
     /// Includes free options, balanced options, and high-quality options
     static let availableModels: [OpenRouterModel] = [
-        .gemma2Free,      // Free option - basic quality
-        .llama32Free,     // Free option - basic quality
-        .qwen25Free,      // Free option - basic quality
-        .gpt52Nano,       // $0.10/1M - good value
-        .gpt4oMini,       // $0.15/1M - good balance
-        .claudeHaiku,     // $1.00/1M - fast Claude
-        .claudeSonnet,    // $3.00/1M - best quality for chat
-        .gpt4o,           // $2.50/1M - high quality
+        .nemotronFree,      // Free option - basic quality
+        .devstralFree,      // Free option - basic quality
+        .liquidFree,        // Free option - basic quality
+        .gpt4oMini,         // $0.15/1M - good balance
+        .claudeHaiku,       // $1.00/1M - fast Claude
+        .claudeSonnet,      // $3.00/1M - best quality for chat
+        .gpt4o,             // $2.50/1M - high quality
     ]
 
     // MARK: - Initialization
@@ -81,10 +80,8 @@ class ChatSettings: ObservableObject {
     /// Description of selected model's characteristics
     var modelDescription: String {
         switch selectedModel {
-        case .gemma2Free, .llama32Free, .qwen25Free:
+        case .nemotronFree, .devstralFree, .liquidFree:
             return "Free model - good for casual chat"
-        case .gpt52Nano:
-            return "Fast and cost-effective"
         case .gpt4oMini:
             return "Balanced performance and cost"
         case .claudeHaiku:
