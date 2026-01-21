@@ -2,21 +2,21 @@
 
 ## Current Position
 
-Phase: 15 of 17 (Daily AI Briefing) - IN PROGRESS
-Plan: 3 of 3 in current phase (completed)
-Status: Plan 15-03 complete - Phase 15 complete, ready for Phase 16
-Last activity: 2026-01-20 - Completed Plan 15-03 (Settings and Integration)
+Phase: 16 of 17 (Desktop Notifications) - IN PROGRESS
+Plan: 2 of 3 in current phase (completed)
+Status: Plan 16-02 complete - Pipeline integration ready
+Last activity: 2026-01-21 - Completed Plan 16-02 (Trigger Integration with Pipelines)
 
-Progress: ██████████ 100% (Phase 15 Complete)
+Progress: █████████░ 93% (Phase 16 Plan 2 Complete)
 
 ## Active Milestone
 
 **v1.1 AI-Powered Work Assistant**
 - Phases: 8-17 (10 phases)
-- Completed: 8/10 (Phase 8 + Phase 9 + Phase 10 + Phase 11 + Phase 12 + Phase 13 + Phase 14 + Phase 15)
-- Next: Phase 16 (AI Chat Interface)
+- Completed: 8/10 (Phase 8-15), Phase 16 Plan 2/3
+- Next: Phase 16 Plan 3 (UI Integration)
 - Focus: Transform from task aggregator to intelligent work assistant
-- Key features: AI priority analysis, smart progress tracking, daily briefings
+- Key features: AI priority analysis, smart progress tracking, daily briefings, desktop notifications
 
 ## Accumulated Context
 
@@ -99,6 +99,21 @@ Progress: ██████████ 100% (Phase 15 Complete)
 - Auto-show Briefing tab before 10am when briefing generated
 - Scheduler lifecycle managed through AIManager singleton
 - Rate limiting feedback in settings UI
+
+**Phase 16 Decisions (Plan 16-01):**
+- P0/P1 delivered immediately, P2+ batched (20-min default)
+- Hourly throttling with configurable max (default 10/hour)
+- Per-source toggles for notification filtering
+- UNUserNotificationCenter categories with Open/Snooze actions
+- NotificationPriority.from(AIPriorityLevel) for priority conversion
+
+**Phase 16 Decisions (Plan 16-02):**
+- P0 notifications sent immediately via NotificationService.shared.notify()
+- Stale notifications use .normal priority (batched, not urgent)
+- Briefing uses .high priority (immediate but not P0 sound)
+- Deadline notifications only for same-day items (daysRemaining == 0)
+- AIManager starts notification service in checkServices() if enabled
+- Pipeline callback pattern: detect event -> check settings -> create BeaconNotification -> notify()
 
 ### Technical Notes
 
@@ -230,13 +245,31 @@ Plan 15-03 (Settings & Integration):
 - ContentView.swift: BriefingSettingsSection inline component, scheduler initialization
 - AppState.swift: Briefing callbacks, selectedItemId for navigation, auto-show tab before 10am
 
+**Phase 16 Implementation (Desktop Notifications - In Progress):**
+Plan 16-01 (Models, Settings, Core Service):
+- Notification.swift: NotificationType enum, NotificationPriority with AIPriorityLevel conversion
+- Notification.swift: BeaconNotification struct, NotificationBatch struct
+- NotificationSettings.swift: UserDefaults-backed singleton (per-source toggles, priority threshold, snooze)
+- NotificationService.swift: @MainActor singleton with DispatchSourceTimer batching
+  - P0/P1 immediate delivery with distinct P0 sound
+  - P2+ batched on 20-min interval (configurable)
+  - Hourly throttling (10/hour default)
+  - UNUserNotificationCenter categories with Open/Snooze actions
+  - NotificationServiceStatistics for monitoring
+
+Plan 16-02 (Pipeline Integration):
+- PriorityPipeline.swift: Added onP0Detected callback, notification delivery for P0 items
+- ProgressPipeline.swift: Added onTaskBecameStale callback, notifiedStaleIds tracking, clearStaleTracking
+- BriefingScheduler.swift: Added sendBriefingNotificationViaService(), sendDeadlineNotifications()
+- AIManager.swift: Added notificationService property, lifecycle methods, snooze controls, callbacks
+
 ## Pending Todos
 
 - [ ] Test suite (deferred from v1.0, consider for v1.1)
 
 ## Blockers/Concerns
 
-None - Phase 15 complete
+None - Phase 16 Plan 1 complete
 
 ## Roadmap Evolution
 
@@ -258,10 +291,12 @@ None - Phase 15 complete
 - Phase 15 Plan 2 (Briefing UI Components) completed: 2026-01-20
 - Phase 15 Plan 3 (Settings and Integration) completed: 2026-01-20
 - Phase 15 (Daily AI Briefing) completed: 2026-01-20
+- Phase 16 Plan 1 (Notification Models, Settings, Core Service) completed: 2026-01-21
+- Phase 16 Plan 2 (Pipeline Integration) completed: 2026-01-21
 
 ## Session Continuity
 
-Last session: 2026-01-20
-Stopped at: Completed Phase 15 (Daily AI Briefing)
+Last session: 2026-01-21
+Stopped at: Completed Phase 16 Plan 2 (Trigger Integration with Pipelines)
 Resume file: None
-Next: Phase 16 (AI Chat Interface)
+Next: Phase 16 Plan 3 (UI Integration)
