@@ -1,9 +1,11 @@
 import SwiftUI
 
 /// Daily briefing tab showing AI-generated morning briefing
-/// Displays urgent items, blocked items, stale items, deadlines, and focus areas
+/// Displays dashboard summary cards with priority/progress counts,
+/// plus urgent items, blocked items, stale items, deadlines, and focus areas
 struct BriefingTab: View {
     @StateObject private var viewModel = BriefingViewModel()
+    @StateObject private var dashboardViewModel = DashboardViewModel()
     @EnvironmentObject var appState: AppState
 
     // Section expansion state
@@ -29,7 +31,21 @@ struct BriefingTab: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
             await viewModel.loadBriefing()
+            await dashboardViewModel.loadCounts()
         }
+        .onAppear {
+            dashboardViewModel.startPeriodicRefresh()
+        }
+        .onDisappear {
+            dashboardViewModel.stopPeriodicRefresh()
+        }
+    }
+
+    // MARK: - Navigation
+
+    private func navigateToFilter(_ filter: DashboardFilter) {
+        // Switch to tasks tab - user can then apply filters from the filter chips
+        appState.selectedTab = .tasks
     }
 
     // MARK: - Loading State
@@ -88,34 +104,43 @@ struct BriefingTab: View {
     // MARK: - Empty State
 
     private var emptyView: some View {
-        VStack(spacing: 16) {
-            Spacer()
-
-            Image(systemName: "sun.horizon")
-                .font(.system(size: 48))
-                .foregroundStyle(.orange)
-
-            Text("No briefing available")
-                .font(.system(size: 15, weight: .medium))
-
-            Text("Your daily overview will appear here once generated")
-                .font(.system(size: 13))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 20)
-
-            Button(action: {
-                Task {
-                    await viewModel.refresh()
-                }
-            }) {
-                Label("Generate Briefing", systemImage: "sparkles")
-                    .font(.system(size: 13))
+        VStack(spacing: 0) {
+            // Dashboard summary cards at top - always visible
+            DashboardSummaryRow(viewModel: dashboardViewModel) { filter in
+                navigateToFilter(filter)
             }
-            .buttonStyle(.bordered)
-            .disabled(!viewModel.canRefresh)
 
-            Spacer()
+            Divider()
+
+            VStack(spacing: 16) {
+                Spacer()
+
+                Image(systemName: "sun.horizon")
+                    .font(.system(size: 48))
+                    .foregroundStyle(.orange)
+
+                Text("No briefing available")
+                    .font(.system(size: 15, weight: .medium))
+
+                Text("Your daily overview will appear here once generated")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+
+                Button(action: {
+                    Task {
+                        await viewModel.refresh()
+                    }
+                }) {
+                    Label("Generate Briefing", systemImage: "sparkles")
+                        .font(.system(size: 13))
+                }
+                .buttonStyle(.bordered)
+                .disabled(!viewModel.canRefresh)
+
+                Spacer()
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -126,6 +151,13 @@ struct BriefingTab: View {
         VStack(spacing: 0) {
             // Greeting header
             BriefingGreeting(greeting: briefing.greeting)
+
+            Divider()
+
+            // Dashboard summary cards
+            DashboardSummaryRow(viewModel: dashboardViewModel) { filter in
+                navigateToFilter(filter)
+            }
 
             Divider()
 
@@ -253,7 +285,7 @@ struct BriefingTab: View {
         }
     }
 
-    // MARK: - Navigation
+    // MARK: - Navigation (Briefing Items)
 
     private func navigateToItem(itemId: String?) {
         // Switch to tasks tab
