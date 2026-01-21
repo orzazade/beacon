@@ -1437,6 +1437,60 @@ actor DatabaseService {
         return results
     }
 
+    // MARK: - Dashboard Count Operations
+
+    /// Get count of items by priority level (efficient for dashboard)
+    /// - Parameter level: The priority level to count
+    /// - Returns: Count of active items with the specified priority level
+    func getPriorityLevelCount(_ level: AIPriorityLevel) async throws -> Int {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = """
+            SELECT COUNT(*)::int as count
+            FROM beacon_items bi
+            INNER JOIN beacon_priority_scores ps ON bi.id = ps.item_id
+            LEFT JOIN beacon_progress_scores prs ON bi.id = prs.item_id
+            LEFT JOIN snoozed_tasks st ON bi.external_id = st.task_id AND bi.source = st.task_source
+            WHERE ps.level::text = '\(level.rawValue)'
+              AND bi.item_type != 'commit'
+              AND (prs.state IS NULL OR prs.state != 'done')
+              AND (st.snooze_until IS NULL OR st.snooze_until < NOW())
+            """
+
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+        for try await row in rows {
+            return try row.decode(Int.self)
+        }
+        return 0
+    }
+
+    /// Get count of items by progress state (efficient for dashboard)
+    /// - Parameter state: The progress state to count
+    /// - Returns: Count of active items with the specified progress state
+    func getProgressStateCount(_ state: ProgressState) async throws -> Int {
+        guard isConnected, let client = client else {
+            throw DatabaseError.notConnected
+        }
+
+        let querySQL = """
+            SELECT COUNT(*)::int as count
+            FROM beacon_items bi
+            INNER JOIN beacon_progress_scores ps ON bi.id = ps.item_id
+            LEFT JOIN snoozed_tasks st ON bi.external_id = st.task_id AND bi.source = st.task_source
+            WHERE ps.state = '\(state.rawValue)'
+              AND bi.item_type != 'commit'
+              AND (st.snooze_until IS NULL OR st.snooze_until < NOW())
+            """
+
+        let rows = try await client.query(PostgresQuery(unsafeSQL: querySQL))
+        for try await row in rows {
+            return try row.decode(Int.self)
+        }
+        return 0
+    }
+
     // MARK: - Briefing Decoding Helpers
 
     private func decodeBriefingContent(from row: PostgresRow) throws -> BriefingContent {

@@ -252,6 +252,16 @@ class AIManager: ObservableObject {
         try await database.getStaleItems(threshold: ProgressSettings.shared.stalenessThresholdSeconds)
     }
 
+    /// Get count of items by priority level (efficient for dashboard)
+    func getPriorityLevelCount(_ level: AIPriorityLevel) async throws -> Int {
+        try await database.getPriorityLevelCount(level)
+    }
+
+    /// Get count of items by progress state (efficient for dashboard)
+    func getProgressStateCount(_ state: ProgressState) async throws -> Int {
+        try await database.getProgressStateCount(state)
+    }
+
     // MARK: - Briefing
 
     /// Start the briefing scheduler
