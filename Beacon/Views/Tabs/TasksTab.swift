@@ -108,13 +108,30 @@ struct TasksTab: View {
     }
 
     private var loadingView: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-            Text("Loading tasks...")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            // Placeholder for filter chips area
+            HStack {
+                ForEach(0..<4, id: \.self) { _ in
+                    SkeletonView(width: 60, height: 24, cornerRadius: 12)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            // Placeholder for task count
+            HStack {
+                SkeletonView(width: 120, height: 12, cornerRadius: 3)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 4)
+
+            Divider()
+
+            // Skeleton task list
+            SkeletonTaskList(rowCount: 8)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func errorView(_ message: String) -> some View {
