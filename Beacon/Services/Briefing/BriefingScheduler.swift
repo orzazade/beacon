@@ -187,13 +187,65 @@ class BriefingScheduler: ObservableObject {
 
         print("[BriefingScheduler] Briefing generated: \(briefing.urgentItems.count) urgent, \(briefing.blockedItems.count) blocked, \(briefing.upcomingDeadlines.count) deadlines")
 
-        // Send notification if enabled
-        if settings.showNotification {
+        let notificationSettings = NotificationSettings.shared
+
+        // Send notification via NotificationService if enabled
+        if settings.showNotification && notificationSettings.enableBriefingNotification {
+            sendBriefingNotificationViaService(briefing)
+        } else if settings.showNotification {
+            // Fallback to direct notification if NotificationService briefing toggle is off
             sendBriefingNotification(briefing)
         }
 
         // Notify callback
         onBriefingGenerated?(briefing)
+
+        // Also send deadline notifications for same-day items
+        if notificationSettings.enableDeadlineReminders {
+            sendDeadlineNotifications(briefing)
+        }
+    }
+
+    /// Send briefing notification through NotificationService
+    private func sendBriefingNotificationViaService(_ briefing: BriefingContent) {
+        var parts: [String] = []
+        if !briefing.urgentItems.isEmpty {
+            parts.append("\(briefing.urgentItems.count) urgent")
+        }
+        if !briefing.blockedItems.isEmpty {
+            parts.append("\(briefing.blockedItems.count) blocked")
+        }
+        if !briefing.upcomingDeadlines.isEmpty {
+            parts.append("\(briefing.upcomingDeadlines.count) deadline\(briefing.upcomingDeadlines.count == 1 ? "" : "s")")
+        }
+
+        let body = parts.isEmpty ? "No critical items today" : parts.joined(separator: ", ")
+
+        let notification = BeaconNotification(
+            type: .briefingReady,
+            priority: .high,  // Deliver immediately but not P0 sound
+            title: "Morning Briefing Ready",
+            subtitle: body,
+            body: briefing.greeting
+        )
+        NotificationService.shared.notify(notification)
+    }
+
+    /// Send notifications for items with same-day deadlines
+    private func sendDeadlineNotifications(_ briefing: BriefingContent) {
+        // Filter for items with 0 days remaining (due today)
+        let todayDeadlines = briefing.upcomingDeadlines.filter { $0.daysRemaining == 0 }
+
+        for item in todayDeadlines {
+            let notification = BeaconNotification(
+                type: .deadlineToday,
+                priority: .high,
+                title: item.title,
+                subtitle: "Due today",
+                body: "Deadline: \(item.dueDate)"
+            )
+            NotificationService.shared.notify(notification)
+        }
     }
 
     // MARK: - Notifications
