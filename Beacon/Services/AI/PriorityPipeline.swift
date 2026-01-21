@@ -30,6 +30,10 @@ class PriorityPipeline: ObservableObject {
     private let baseRetryDelay: TimeInterval = 1.0
     private let maxRetryDelay: TimeInterval = 30.0
 
+    // Notification callback
+    /// Callback when P0 item detected
+    var onP0Detected: ((PriorityScore, BeaconItem) -> Void)?
+
     init(
         analysisService: PriorityAnalysisService = PriorityAnalysisService(),
         database: DatabaseService = DatabaseService()
@@ -127,6 +131,30 @@ class PriorityPipeline: ObservableObject {
 
             // Store results
             try await database.storePriorityScores(result.scores)
+
+            // Notify for P0 items (critical priority)
+            let notificationSettings = NotificationSettings.shared
+            for score in result.scores where score.level == .p0 {
+                // Find the item this score belongs to
+                if let item = pendingItems.first(where: { $0.id == score.itemId }) {
+                    // Trigger callback
+                    onP0Detected?(score, item)
+
+                    // Send notification directly if enabled
+                    if notificationSettings.isEnabled {
+                        let notification = BeaconNotification(
+                            type: .urgentItem,
+                            priority: .critical,
+                            title: item.title,
+                            subtitle: "Priority: P0 Critical",
+                            body: score.reasoning,
+                            itemId: item.id,
+                            source: item.source
+                        )
+                        NotificationService.shared.notify(notification)
+                    }
+                }
+            }
 
             // Log cost
             if let usage = result.usage {
