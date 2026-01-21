@@ -88,6 +88,12 @@ actor TeamsService {
         // Return top 10 most recent messages overall
         let result = Array(allMessages.prefix(10))
         print("[Teams] Returning \(result.count) messages")
+
+        // Update last refresh timestamp
+        await MainActor.run {
+            RefreshSettings.shared.teamsLastRefresh = Date()
+        }
+
         return result
     }
 

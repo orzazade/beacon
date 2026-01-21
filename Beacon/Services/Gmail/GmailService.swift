@@ -34,6 +34,11 @@ actor GmailService {
             }
         }
 
+        // Update last refresh timestamp
+        await MainActor.run {
+            RefreshSettings.shared.gmailLastRefresh = Date()
+        }
+
         return emails
     }
 

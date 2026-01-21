@@ -71,7 +71,14 @@ actor AzureDevOpsService {
         )
 
         // Map to unified model
-        return azureItems.map { mapToWorkItem($0) }
+        let workItems = azureItems.map { mapToWorkItem($0) }
+
+        // Update last refresh timestamp
+        await MainActor.run {
+            RefreshSettings.shared.azureDevOpsLastRefresh = Date()
+        }
+
+        return workItems
     }
 
     // MARK: - Private API Methods

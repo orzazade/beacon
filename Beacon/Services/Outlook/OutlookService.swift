@@ -57,9 +57,16 @@ actor OutlookService {
             return isFlagged || isHighImportance
         }
 
-        return filteredMessages.map { message in
+        let emails = filteredMessages.map { message in
             mapToEmail(message)
         }
+
+        // Update last refresh timestamp
+        await MainActor.run {
+            RefreshSettings.shared.outlookLastRefresh = Date()
+        }
+
+        return emails
     }
 
     // MARK: - Private Methods
