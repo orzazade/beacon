@@ -26,6 +26,14 @@ enum Tab: String, CaseIterable {
     }
 }
 
+/// Service connection states for graceful degradation
+enum ServiceStatus: String {
+    case connected
+    case connecting
+    case disconnected
+    case unavailable
+}
+
 /// Global application state for Beacon
 /// Manages notification status, Focus Mode awareness, and other app-wide state
 @MainActor
@@ -41,6 +49,40 @@ class AppState: ObservableObject {
 
     /// Count of unread notifications
     @Published var notificationCount: Int = 0
+
+    // MARK: - Service Status Tracking
+
+    /// Database connection status
+    @Published var databaseStatus: ServiceStatus = .disconnected
+
+    /// Ollama (embeddings) status
+    @Published var ollamaStatus: ServiceStatus = .disconnected
+
+    /// OpenRouter (cloud AI) status
+    @Published var openRouterStatus: ServiceStatus = .disconnected
+
+    /// Overall system health - true if at least basic functionality available
+    var isOperational: Bool {
+        // App is operational even without AI - just shows raw data
+        true
+    }
+
+    /// Whether AI features are available
+    var isAIAvailable: Bool {
+        databaseStatus == .connected && (ollamaStatus == .connected || openRouterStatus == .connected)
+    }
+
+    /// Whether database is degraded (affects priority/progress display)
+    var isDegraded: Bool {
+        databaseStatus != .connected
+    }
+
+    /// Update service statuses from AIManager
+    func updateServiceStatus(database: Bool, ollama: Bool, openRouter: Bool) {
+        databaseStatus = database ? .connected : .disconnected
+        ollamaStatus = ollama ? .connected : .disconnected
+        openRouterStatus = openRouter ? .connected : .disconnected
+    }
 
     /// Focus Mode observer for detecting Do Not Disturb state
     let focusModeObserver = FocusModeObserver()
