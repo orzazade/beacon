@@ -5,7 +5,8 @@ struct ContentView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var authManager: AuthManager
     @State private var showingSettings = false
-    @State private var scannerInitialized = false
+    @State private var isInitialized = false
+    @State private var initializationError: String?
     @State private var highlightedTaskId: String?
 
     var body: some View {
@@ -37,58 +38,72 @@ struct ContentView: View {
         }
         .frame(width: 320, height: 450)
         .onAppear {
-            initializeScannerIfNeeded()
+            initializeServices()
         }
     }
 
-    /// Initialize AI services and local scanner
-    private func initializeScannerIfNeeded() {
-        // Only initialize once
-        guard !scannerInitialized else { return }
-        guard authManager.localScanner == nil else {
-            scannerInitialized = true
-            return
-        }
+    /// Initialize AI services with deferred background loading
+    /// Phase 1: Quick connectivity check (fast, updates status)
+    /// Phase 2: Background services (non-blocking, heavy work)
+    private func initializeServices() {
+        guard !isInitialized else { return }
 
         Task {
-            // Initialize AI services (database, Ollama, OpenRouter)
+            // Update status to "connecting"
+            appState.databaseStatus = .connecting
+            appState.ollamaStatus = .connecting
+
+            // Phase 1: Check AI services (fast, just connectivity)
             await AIManager.shared.checkServices()
 
-            // Check if database connected successfully
-            guard await AIManager.shared.isDatabaseConnected else {
-                debugLog("[ContentView] Database not connected, skipping scanner init")
-                return
+            // Update AppState with actual status
+            let dbConnected = await AIManager.shared.isDatabaseConnected
+            appState.updateServiceStatus(
+                database: dbConnected,
+                ollama: AIManager.shared.isOllamaAvailable,
+                openRouter: AIManager.shared.isOpenRouterConfigured
+            )
+
+            // Phase 2: Start background services (deferred, non-blocking)
+            Task.detached(priority: .background) {
+                // These run in background, don't block UI
+                if dbConnected {
+                    await MainActor.run {
+                        // Start pipelines only after DB confirmed
+                        self.startBackgroundServices()
+                    }
+                }
             }
 
-            debugLog("[ContentView] Database connected, initializing scanner")
-            scannerInitialized = true
+            isInitialized = true
+        }
+    }
 
-            // Initialize scanner with shared DatabaseService
+    /// Start background services after database confirmed connected
+    private func startBackgroundServices() {
+        // Initialize scanner
+        if authManager.localScanner == nil {
             authManager.initializeLocalScanner(
                 databaseService: DatabaseService(),
                 aiManager: AIManager.shared
             )
-
-            // Trigger initial scan
             authManager.triggerLocalScan()
-
-            // Start periodic scanning
             authManager.startLocalScanning()
+        }
 
-            // Set up briefing callback for tab switching
-            appState.setupBriefingCallback()
+        // Set up briefing callback
+        appState.setupBriefingCallback()
 
-            // Start briefing scheduler if enabled and OpenRouter configured
-            if AIManager.shared.isOpenRouterConfigured && BriefingSettings.shared.isEnabled {
-                debugLog("[ContentView] Starting briefing scheduler")
-                AIManager.shared.startBriefingScheduler()
-            }
+        // Start briefing scheduler if configured
+        if AIManager.shared.isOpenRouterConfigured && BriefingSettings.shared.isEnabled {
+            debugLog("[ContentView] Starting briefing scheduler")
+            AIManager.shared.startBriefingScheduler()
+        }
 
-            // Start notification service if enabled
-            if NotificationSettings.shared.isEnabled {
-                debugLog("[ContentView] Starting notification service")
-                NotificationService.shared.start()
-            }
+        // Start notification service if enabled
+        if NotificationSettings.shared.isEnabled {
+            debugLog("[ContentView] Starting notification service")
+            NotificationService.shared.start()
         }
     }
 }
@@ -299,6 +314,10 @@ struct HeaderView: View {
             }
 
             Spacer()
+
+            // Service status indicator - shows when degraded
+            ServiceStatusIndicator()
+                .environmentObject(appState)
 
             // Notification badge
             if appState.notificationCount > 0 {
