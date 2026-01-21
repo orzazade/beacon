@@ -88,13 +88,18 @@ struct ContentView: View {
 }
 
 /// Settings content view shown inline in the popover
+/// Uses DisclosureGroup accordion pattern for organized collapsible sections
 struct SettingsContentView: View {
     @Binding var showingSettings: Bool
     @EnvironmentObject var authManager: AuthManager
 
-    // Azure DevOps configuration stored in UserDefaults
-    @AppStorage("devOpsOrganization") private var devOpsOrganization: String = ""
-    @AppStorage("devOpsProject") private var devOpsProject: String = ""
+    // DisclosureGroup expanded states
+    @State private var isAccountsExpanded = true
+    @State private var isModelsExpanded = false
+    @State private var isRefreshExpanded = false
+    @State private var isOllamaExpanded = false
+    @State private var isBriefingExpanded = false
+    @State private var isAIServicesExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -131,187 +136,50 @@ struct SettingsContentView: View {
 
             Divider()
 
-            // Settings content
+            // Settings content with DisclosureGroup accordion sections
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(spacing: 12) {
                     // Accounts section
-                    Text("Accounts")
-                        .font(.headline)
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-
-                    // Microsoft
-                    GroupBox {
-                        HStack {
-                            Image(systemName: "circle.fill")
-                                .foregroundColor(authManager.isMicrosoftSignedIn ? .green : .red)
-                                .font(.caption)
-
-                            VStack(alignment: .leading) {
-                                Text("Microsoft")
-                                    .font(.subheadline)
-                                Text("Azure DevOps + Outlook")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-
-                            Spacer()
-
-                            if authManager.isMicrosoftSignedIn {
-                                Button("Sign Out") {
-                                    Task { await authManager.signOutMicrosoft() }
-                                }
-                                .controlSize(.small)
-                            } else {
-                                Button("Sign In") {
-                                    Task { await authManager.signInWithMicrosoft() }
-                                }
-                                .controlSize(.small)
-                                .disabled(authManager.isLoading)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-
-                    // Azure DevOps configuration (only show when Microsoft is signed in)
-                    if authManager.isMicrosoftSignedIn {
-                        GroupBox {
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Text("Azure DevOps")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                    Spacer()
-                                    Image(systemName: "circle.fill")
-                                        .foregroundColor(authManager.isDevOpsAuthorized ? .green : .orange)
-                                        .font(.system(size: 8))
-                                    Text(authManager.isDevOpsAuthorized ? "Authorized" : "Needs auth")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-
-                                if !authManager.isDevOpsAuthorized {
-                                    Button("Authorize Azure DevOps") {
-                                        Task { await authManager.authorizeDevOps() }
-                                    }
-                                    .buttonStyle(.borderedProminent)
-                                    .controlSize(.small)
-                                    .disabled(authManager.isLoading)
-                                }
-
-                                HStack {
-                                    Text("Organization:")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .frame(width: 80, alignment: .leading)
-                                    TextField("e.g., mycompany", text: $devOpsOrganization)
-                                        .textFieldStyle(.roundedBorder)
-                                        .font(.caption)
-                                        .onChange(of: devOpsOrganization) { _, newValue in
-                                            applyDevOpsConfig()
-                                        }
-                                }
-
-                                HStack {
-                                    Text("Project:")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .frame(width: 80, alignment: .leading)
-                                    TextField("e.g., MyProject", text: $devOpsProject)
-                                        .textFieldStyle(.roundedBorder)
-                                        .font(.caption)
-                                        .onChange(of: devOpsProject) { _, newValue in
-                                            applyDevOpsConfig()
-                                        }
-                                }
-
-                                Text("Enter your Azure DevOps organization and project to fetch work items.")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .padding(.horizontal)
+                    DisclosureGroup("Accounts", isExpanded: $isAccountsExpanded) {
+                        AccountsSection()
+                            .environmentObject(authManager)
+                            .padding(.top, 8)
                     }
 
-                    // Google
-                    GroupBox {
-                        HStack {
-                            Image(systemName: "circle.fill")
-                                .foregroundColor(authManager.isGoogleSignedIn ? .green : .red)
-                                .font(.caption)
-
-                            VStack(alignment: .leading) {
-                                Text("Google")
-                                    .font(.subheadline)
-                                if let email = authManager.googleUserEmail {
-                                    Text(email)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("Gmail")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-
-                            Spacer()
-
-                            if authManager.isGoogleSignedIn {
-                                Button("Sign Out") {
-                                    Task { await authManager.signOutGoogle() }
-                                }
-                                .controlSize(.small)
-                            } else {
-                                Button("Sign In") {
-                                    Task { await authManager.signInWithGoogle() }
-                                }
-                                .controlSize(.small)
-                                .disabled(authManager.isLoading)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-
-                    // AI Services section
-                    AIServicesSettingsSection()
-
-                    // Briefing section
-                    BriefingSettingsSection()
-
-                    // Error display
-                    if let error = authManager.error {
-                        Text(error)
-                            .foregroundColor(.red)
-                            .font(.caption)
-                            .padding(.horizontal)
+                    // AI Models section
+                    DisclosureGroup("AI Models", isExpanded: $isModelsExpanded) {
+                        ModelSelectionSection()
+                            .padding(.top, 8)
                     }
 
-                    // Loading indicator
-                    if authManager.isLoading {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                            Spacer()
-                        }
-                        .padding()
+                    // Refresh Intervals section
+                    DisclosureGroup("Refresh Intervals", isExpanded: $isRefreshExpanded) {
+                        RefreshIntervalsSection()
+                            .padding(.top, 8)
                     }
 
-                    Spacer()
+                    // Ollama section
+                    DisclosureGroup("Ollama (Embeddings)", isExpanded: $isOllamaExpanded) {
+                        OllamaSection()
+                            .padding(.top, 8)
+                    }
+
+                    // AI Services section (OpenRouter API key, Database status)
+                    DisclosureGroup("AI Services", isExpanded: $isAIServicesExpanded) {
+                        AIServicesSettingsSectionContent()
+                            .padding(.top, 8)
+                    }
+
+                    // Daily Briefing section
+                    DisclosureGroup("Daily Briefing", isExpanded: $isBriefingExpanded) {
+                        BriefingSettingsSectionContent()
+                            .padding(.top, 8)
+                    }
                 }
+                .padding()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            applyDevOpsConfig()
-        }
-    }
-
-    /// Apply Azure DevOps configuration when values change
-    private func applyDevOpsConfig() {
-        guard !devOpsOrganization.isEmpty, !devOpsProject.isEmpty else { return }
-        Task {
-            await authManager.configureDevOps(organization: devOpsOrganization, project: devOpsProject)
-        }
     }
 }
 
@@ -493,166 +361,89 @@ struct FooterView: View {
     }
 }
 
-/// Inline AI services settings section for popover settings
-struct AIServicesSettingsSection: View {
+/// AI services settings section content for accordion (no header)
+struct AIServicesSettingsSectionContent: View {
     @StateObject private var viewModel = AIServicesInlineViewModel()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Section header
-            Text("AI Services")
-                .font(.headline)
-                .padding(.horizontal)
-                .padding(.top, 8)
+        VStack(alignment: .leading, spacing: 12) {
+            // OpenRouter API status row
+            HStack {
+                Circle()
+                    .fill(viewModel.isOpenRouterConfigured ? Color.green : Color.red)
+                    .frame(width: 8, height: 8)
 
-            // OpenRouter API
-            GroupBox {
-                VStack(spacing: 10) {
-                    // Status row
-                    HStack {
-                        Image(systemName: "brain")
-                            .foregroundColor(.purple)
-                            .font(.system(size: 16))
-
-                        VStack(alignment: .leading) {
-                            Text("OpenRouter API")
-                                .font(.subheadline)
-                            if viewModel.isOpenRouterConfigured {
-                                if let credits = viewModel.openRouterCredits {
-                                    Text("$\(credits, specifier: "%.2f") remaining")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
-                                } else {
-                                    Text("Connected")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
-                                }
-                            } else {
-                                Text("Not configured")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        Spacer()
-
-                        Circle()
-                            .fill(viewModel.isOpenRouterConfigured ? Color.green : Color.red)
-                            .frame(width: 8, height: 8)
-                    }
-
-                    // API Key input or remove button
+                VStack(alignment: .leading) {
+                    Text("OpenRouter API")
+                        .font(.subheadline)
                     if viewModel.isOpenRouterConfigured {
-                        Button("Remove API Key") {
-                            Task { await viewModel.removeAPIKey() }
-                        }
-                        .font(.caption)
-                        .foregroundColor(.red)
-                        .buttonStyle(.borderless)
-                    } else {
-                        HStack {
-                            SecureField("API Key", text: $viewModel.apiKeyInput)
-                                .textFieldStyle(.roundedBorder)
+                        if let credits = viewModel.openRouterCredits {
+                            Text("$\(credits, specifier: "%.2f") remaining")
                                 .font(.caption)
-
-                            Button("Save") {
-                                Task { await viewModel.saveAPIKey() }
-                            }
-                            .controlSize(.small)
-                            .disabled(viewModel.apiKeyInput.isEmpty || viewModel.isSaving)
-                        }
-
-                        Link("Get API key", destination: URL(string: "https://openrouter.ai/keys")!)
-                            .font(.caption2)
-                    }
-
-                    Divider()
-
-                    // Model picker
-                    HStack {
-                        Text("Model")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .frame(width: 50, alignment: .leading)
-
-                        Picker("", selection: $viewModel.selectedModel) {
-                            ForEach(OpenRouterModel.allCases, id: \.self) { model in
-                                HStack {
-                                    Text(model.displayName)
-                                    if model.isFree {
-                                        Text("FREE")
-                                            .font(.caption2)
-                                            .foregroundColor(.green)
-                                    }
-                                }
-                                .tag(model)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-            }
-            .padding(.horizontal)
-
-            // Database & Ollama status
-            GroupBox {
-                VStack(spacing: 8) {
-                    // Database status
-                    HStack {
-                        Image(systemName: "cylinder")
-                            .foregroundColor(.blue)
-                            .font(.system(size: 14))
-
-                        Text("Database")
-                            .font(.caption)
-
-                        Spacer()
-
-                        Circle()
-                            .fill(viewModel.isDatabaseConnected ? Color.green : Color.red)
-                            .frame(width: 6, height: 6)
-
-                        Text(viewModel.isDatabaseConnected ? "Connected" : "Not connected")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-
-                    // Ollama status
-                    HStack {
-                        Image(systemName: "desktopcomputer")
-                            .foregroundColor(.orange)
-                            .font(.system(size: 14))
-
-                        Text("Ollama")
-                            .font(.caption)
-
-                        Spacer()
-
-                        Circle()
-                            .fill(viewModel.isOllamaAvailable ? Color.green : Color.yellow)
-                            .frame(width: 6, height: 6)
-
-                        if viewModel.isOllamaAvailable {
-                            Text("v\(viewModel.ollamaVersion ?? "?")")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.green)
                         } else {
-                            Text("Optional")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                            Text("Connected")
+                                .font(.caption)
+                                .foregroundColor(.green)
                         }
+                    } else {
+                        Text("Not configured")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
+
+                Spacer()
             }
-            .padding(.horizontal)
+
+            // API Key input or remove button
+            if viewModel.isOpenRouterConfigured {
+                Button("Remove API Key") {
+                    Task { await viewModel.removeAPIKey() }
+                }
+                .font(.caption)
+                .foregroundColor(.red)
+                .buttonStyle(.borderless)
+            } else {
+                HStack {
+                    SecureField("API Key", text: $viewModel.apiKeyInput)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption)
+
+                    Button("Save") {
+                        Task { await viewModel.saveAPIKey() }
+                    }
+                    .controlSize(.small)
+                    .disabled(viewModel.apiKeyInput.isEmpty || viewModel.isSaving)
+                }
+
+                Link("Get API key", destination: URL(string: "https://openrouter.ai/keys")!)
+                    .font(.caption2)
+            }
+
+            Divider()
+
+            // Database status row
+            HStack {
+                Circle()
+                    .fill(viewModel.isDatabaseConnected ? Color.green : Color.red)
+                    .frame(width: 8, height: 8)
+
+                Text("Database")
+                    .font(.subheadline)
+
+                Spacer()
+
+                Text(viewModel.isDatabaseConnected ? "Connected" : "Not connected")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
 
             // Error display
             if let error = viewModel.error {
                 Text(error)
                     .font(.caption2)
                     .foregroundColor(.red)
-                    .padding(.horizontal)
             }
         }
         .onAppear {
@@ -721,103 +512,86 @@ class AIServicesInlineViewModel: ObservableObject {
     }
 }
 
-/// Inline briefing settings section for popover settings
-struct BriefingSettingsSection: View {
+/// Briefing settings section content for accordion (no header)
+struct BriefingSettingsSectionContent: View {
     @ObservedObject private var settings = BriefingSettings.shared
-    @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Section header
-            Text("Briefing")
-                .font(.headline)
-                .padding(.horizontal)
-                .padding(.top, 8)
+        VStack(alignment: .leading, spacing: 12) {
+            // Main toggle row
+            HStack {
+                Text("Enable")
+                    .font(.subheadline)
 
-            GroupBox {
-                VStack(spacing: 12) {
-                    // Main toggle row
-                    HStack {
-                        Image(systemName: "sun.horizon")
-                            .foregroundColor(.orange)
-                            .font(.system(size: 16))
+                Spacer()
 
-                        VStack(alignment: .leading) {
-                            Text("Daily Briefing")
-                                .font(.subheadline)
-                            Text("AI-generated morning summary")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-
-                        Spacer()
-
-                        Toggle("", isOn: $settings.isEnabled)
-                            .toggleStyle(.switch)
-                            .onChange(of: settings.isEnabled) { _, newValue in
-                                if newValue {
-                                    AIManager.shared.startBriefingScheduler()
-                                } else {
-                                    AIManager.shared.stopBriefingScheduler()
-                                }
-                            }
-                    }
-
-                    // Expandable settings when enabled
-                    if settings.isEnabled {
-                        Divider()
-
-                        // Schedule time
-                        HStack {
-                            Text("Schedule")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .frame(width: 70, alignment: .leading)
-
-                            Picker("", selection: $settings.scheduledHour) {
-                                ForEach(5...11, id: \.self) { hour in
-                                    Text("\(hour):00 AM").tag(hour)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(maxWidth: .infinity)
-                        }
-
-                        // Notification toggle
-                        HStack {
-                            Text("Notify")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .frame(width: 70, alignment: .leading)
-
-                            Toggle("When ready", isOn: $settings.showNotification)
-                                .toggleStyle(.switch)
-                                .controlSize(.small)
-                        }
-
-                        // Status indicator
-                        HStack {
-                            let stats = AIManager.shared.briefingSchedulerStats
-                            Circle()
-                                .fill(stats.isRunning ? Color.green : Color.gray)
-                                .frame(width: 6, height: 6)
-
-                            if let nextTime = stats.nextScheduledTimeString {
-                                Text("Next: \(nextTime)")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            } else {
-                                Text(stats.isRunning ? "Running" : "Stopped")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-
-                            Spacer()
+                Toggle("", isOn: $settings.isEnabled)
+                    .toggleStyle(.switch)
+                    .onChange(of: settings.isEnabled) { _, newValue in
+                        if newValue {
+                            AIManager.shared.startBriefingScheduler()
+                        } else {
+                            AIManager.shared.stopBriefingScheduler()
                         }
                     }
+            }
+
+            Text("AI-generated morning summary")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            // Settings when enabled
+            if settings.isEnabled {
+                Divider()
+
+                // Schedule time
+                HStack {
+                    Text("Schedule")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 70, alignment: .leading)
+
+                    Picker("", selection: $settings.scheduledHour) {
+                        ForEach(5...11, id: \.self) { hour in
+                            Text("\(hour):00 AM").tag(hour)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity)
+                }
+
+                // Notification toggle
+                HStack {
+                    Text("Notify")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 70, alignment: .leading)
+
+                    Toggle("When ready", isOn: $settings.showNotification)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                }
+
+                // Status indicator
+                HStack {
+                    let stats = AIManager.shared.briefingSchedulerStats
+                    Circle()
+                        .fill(stats.isRunning ? Color.green : Color.gray)
+                        .frame(width: 6, height: 6)
+
+                    if let nextTime = stats.nextScheduledTimeString {
+                        Text("Next: \(nextTime)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text(stats.isRunning ? "Running" : "Stopped")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
                 }
             }
-            .padding(.horizontal)
         }
     }
 }
