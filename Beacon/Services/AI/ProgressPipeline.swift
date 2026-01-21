@@ -36,6 +36,12 @@ class ProgressPipeline: ObservableObject {
     // Settings reference
     private let settings = ProgressSettings.shared
 
+    // Notification tracking
+    /// Callback when task becomes stale
+    var onTaskBecameStale: ((ProgressScore, BeaconItem) -> Void)?
+    /// Track items already notified as stale (avoid re-notifying)
+    private var notifiedStaleIds: Set<UUID> = []
+
     init(
         analysisService: ProgressAnalysisService = ProgressAnalysisService(),
         database: DatabaseService = DatabaseService()
@@ -195,6 +201,8 @@ class ProgressPipeline: ObservableObject {
                 print("[ProgressPipeline] Detected \(staleItemIds.count) stale items")
                 staleItemsDetected = staleItemIds.count
 
+                let notificationSettings = NotificationSettings.shared
+
                 // Update stale items to "stale" state
                 for itemId in staleItemIds {
                     do {
@@ -209,6 +217,31 @@ class ProgressPipeline: ObservableObject {
                             modelUsed: "staleness_detection"
                         )
                         try await database.storeProgressScore(staleScore)
+
+                        // Send notification for newly stale items (not already notified)
+                        if !notifiedStaleIds.contains(itemId) {
+                            notifiedStaleIds.insert(itemId)
+
+                            // Fetch item details for notification
+                            if let item = try? await database.getItem(by: itemId) {
+                                // Trigger callback
+                                onTaskBecameStale?(staleScore, item)
+
+                                // Send notification if stale alerts enabled
+                                if notificationSettings.isEnabled && notificationSettings.enableStaleAlerts {
+                                    let notification = BeaconNotification(
+                                        type: .taskStale,
+                                        priority: .normal,  // Stale = batched (not urgent)
+                                        title: item.title,
+                                        subtitle: "Task appears stale",
+                                        body: "No activity detected for \(Int(stalenessThreshold / 86400)) days",
+                                        itemId: item.id,
+                                        source: item.source
+                                    )
+                                    NotificationService.shared.notify(notification)
+                                }
+                            }
+                        }
                     } catch {
                         print("[ProgressPipeline] Failed to update stale item \(itemId): \(error)")
                     }
@@ -217,6 +250,16 @@ class ProgressPipeline: ObservableObject {
         } catch {
             print("[ProgressPipeline] Staleness detection failed: \(error)")
         }
+    }
+
+    /// Clear stale notification tracking for an item (call when item updated)
+    func clearStaleTracking(itemId: UUID) {
+        notifiedStaleIds.remove(itemId)
+    }
+
+    /// Clear all stale tracking (call when resetting pipeline)
+    func clearAllStaleTracking() {
+        notifiedStaleIds.removeAll()
     }
 
     // MARK: - Cross-Source Correlation
