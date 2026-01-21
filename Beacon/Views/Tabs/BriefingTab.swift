@@ -51,17 +51,35 @@ struct BriefingTab: View {
     // MARK: - Loading State
 
     private var loadingView: some View {
-        VStack(spacing: 16) {
-            Spacer()
+        VStack(spacing: 0) {
+            // Skeleton greeting
+            SkeletonGreeting()
 
-            ProgressView()
-                .scaleEffect(1.2)
+            Divider()
 
-            Text("Generating your briefing...")
-                .font(.system(size: 14))
-                .foregroundColor(.secondary)
+            // Skeleton dashboard summary cards
+            HStack(spacing: 8) {
+                ForEach(0..<4, id: \.self) { _ in
+                    SkeletonView(height: 56, cornerRadius: 8)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
 
-            Spacer()
+            Divider()
+
+            // Skeleton sections
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(0..<3, id: \.self) { index in
+                        SkeletonBriefingSection()
+
+                        if index < 2 {
+                            Divider()
+                        }
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
