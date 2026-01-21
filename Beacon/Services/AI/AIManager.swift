@@ -29,6 +29,9 @@ class AIManager: ObservableObject {
     private let briefingService: BriefingService
     private let briefingScheduler: BriefingScheduler
 
+    // Notifications
+    private let notificationService: NotificationService
+
     // Chat (lazy initialized to avoid circular dependency)
     private var _chatService: ChatService?
 
@@ -51,6 +54,7 @@ class AIManager: ObservableObject {
         progressPipeline: ProgressPipeline? = nil,
         briefingService: BriefingService? = nil,
         briefingScheduler: BriefingScheduler? = nil,
+        notificationService: NotificationService? = nil,
         chatService: ChatService? = nil
     ) {
         self.ollama = ollama
@@ -68,6 +72,7 @@ class AIManager: ObservableObject {
         )
         self.briefingService = briefingService ?? BriefingService(database: database, openRouter: openRouter)
         self.briefingScheduler = briefingScheduler ?? BriefingScheduler(briefingService: self.briefingService)
+        self.notificationService = notificationService ?? NotificationService.shared
 
         // Chat service is initialized lazily via the chat accessor to avoid circular dependency
         self._chatService = chatService
@@ -114,6 +119,23 @@ class AIManager: ObservableObject {
             }
         } else {
             print("[AIManager] Skipping database-dependent services (database not connected)")
+        }
+
+        // Start notification service if enabled (doesn't require database)
+        if NotificationSettings.shared.isEnabled {
+            startNotificationService()
+        }
+
+        // Wire up P0 callback for logging
+        priorityPipeline.onP0Detected = { [weak self] score, item in
+            print("[AIManager] P0 detected: \(item.title)")
+            // Notification already sent by pipeline
+        }
+
+        // Wire up stale callback for logging
+        progressPipeline.onTaskBecameStale = { [weak self] score, item in
+            print("[AIManager] Task became stale: \(item.title)")
+            // Notification already sent by pipeline
         }
     }
 
@@ -280,6 +302,38 @@ class AIManager: ObservableObject {
     /// Trigger immediate briefing generation
     func triggerBriefingNow() async {
         await briefingScheduler.triggerNow()
+    }
+
+    // MARK: - Notifications
+
+    /// Start the notification service
+    func startNotificationService() {
+        notificationService.start()
+    }
+
+    /// Stop the notification service
+    func stopNotificationService() {
+        notificationService.stop()
+    }
+
+    /// Get notification service statistics
+    var notificationServiceStats: NotificationServiceStatistics {
+        notificationService.statistics
+    }
+
+    /// Snooze notifications for a duration
+    func snoozeNotifications(for duration: SnoozeDuration) {
+        NotificationSettings.shared.snooze(for: duration)
+    }
+
+    /// Clear notification snooze
+    func clearNotificationSnooze() {
+        NotificationSettings.shared.clearSnooze()
+    }
+
+    /// Set callback for notification taps
+    func onNotificationTapped(_ callback: @escaping (BeaconNotification) -> Void) {
+        notificationService.onNotificationTapped = callback
     }
 
     // MARK: - Chat
