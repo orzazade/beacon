@@ -83,6 +83,12 @@ struct ContentView: View {
                 debugLog("[ContentView] Starting briefing scheduler")
                 AIManager.shared.startBriefingScheduler()
             }
+
+            // Start notification service if enabled
+            if NotificationSettings.shared.isEnabled {
+                debugLog("[ContentView] Starting notification service")
+                NotificationService.shared.start()
+            }
         }
     }
 }
