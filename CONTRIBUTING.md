@@ -117,13 +117,26 @@ Use descriptive branch names:
 
 ```
 Beacon/
-├── App/           # App entry point, menu bar setup
+├── App/           # App entry point, menu bar setup, state
 ├── Auth/          # OAuth providers (Microsoft, Google)
 ├── Config/        # Configuration, secrets
 ├── Models/        # Data models (tasks, emails, etc.)
-├── Services/      # API clients (DevOps, Graph, Gmail)
+├── Services/
+│   ├── AI/        # AI manager, embeddings, LLM
+│   ├── AzureDevOps/   # ADO API client
+│   ├── Briefing/      # Daily briefing generation
+│   ├── Database/      # PostgreSQL + pgvector
+│   ├── Gmail/         # Gmail API client
+│   ├── LocalScanner/  # TODO/FIXME file scanner
+│   ├── Notifications/ # Desktop notifications
+│   ├── Outlook/       # Outlook API client
+│   ├── Settings/      # App settings persistence
+│   └── Teams/         # Teams API client
 ├── ViewModels/    # SwiftUI view models
-├── Views/         # SwiftUI views
+├── Views/
+│   ├── Components/    # Reusable UI components
+│   ├── Settings/      # Settings panels
+│   └── Tabs/          # Main tab views
 └── Utilities/     # Helper functions
 ```
 

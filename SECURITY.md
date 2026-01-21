@@ -14,7 +14,8 @@ Beacon takes security seriously. Here's how we protect your data:
 
 - **Credentials**: Stored in macOS Keychain (encrypted, system-level security)
 - **Tokens**: OAuth tokens stored securely, never in plain text
-- **Data**: All task data stays on your local machine (v1.0)
+- **Local Data**: Task data and embeddings stored in local PostgreSQL
+- **Cloud AI**: OpenRouter (for briefings) is opt-in only; embeddings always stay local via Ollama
 
 ### Network Security
 
@@ -30,6 +31,7 @@ Beacon requests only the minimum permissions needed:
 |---------|-------------|---------|
 | Azure DevOps | `user_impersonation` | Read work items |
 | Microsoft Graph | `Mail.Read` | Read flagged emails |
+| Microsoft Graph | `Chat.Read`, `ChannelMessage.Read.All` | Read Teams messages |
 | Gmail | `gmail.readonly` | Read starred emails |
 
 ## Reporting a Vulnerability
