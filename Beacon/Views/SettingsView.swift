@@ -14,6 +14,11 @@ struct SettingsView: View {
                     Label("Accounts", systemImage: "person.crop.circle")
                 }
 
+            NotificationSettingsView()
+                .tabItem {
+                    Label("Notifications", systemImage: "bell.badge")
+                }
+
             AIServicesSettingsView()
                 .tabItem {
                     Label("AI Services", systemImage: "brain")
@@ -24,7 +29,7 @@ struct SettingsView: View {
                     Label("Shortcuts", systemImage: "keyboard")
                 }
         }
-        .frame(width: 450, height: 500)
+        .frame(width: 450, height: 550)
     }
 }
 
