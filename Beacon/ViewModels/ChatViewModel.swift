@@ -239,9 +239,10 @@ class ChatViewModel: ObservableObject {
         streamingContent = ""
 
         do {
+            let selectedModel = ChatSettings.shared.selectedModel
             let stream = await openRouter.streamChat(
                 messages: historyMessages,
-                model: .claudeSonnet,
+                model: selectedModel,
                 temperature: 0.7,
                 maxTokens: 2048
             )
@@ -262,7 +263,7 @@ class ChatViewModel: ObservableObject {
                 content: streamingContent,
                 citations: citations,
                 suggestedActions: actions,
-                modelUsed: OpenRouterModel.claudeSonnet.rawValue
+                modelUsed: selectedModel.rawValue
             )
             messages.append(assistantMessage)
 
