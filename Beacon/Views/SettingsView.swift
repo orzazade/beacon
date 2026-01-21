@@ -208,153 +208,157 @@ struct AccountsSettingsView: View {
 }
 
 /// AI Services settings tab for OpenRouter and database configuration
+/// Uses accordion pattern matching the popover settings
 struct AIServicesSettingsView: View {
     @StateObject private var viewModel = AIServicesSettingsViewModel()
 
+    // DisclosureGroup expanded states
+    @State private var isModelsExpanded = true
+    @State private var isRefreshExpanded = false
+    @State private var isOllamaExpanded = false
+    @State private var isServicesExpanded = false
+
     var body: some View {
-        Form {
-            // OpenRouter Section
-            Section("OpenRouter API") {
-                HStack {
-                    Image(systemName: "circle.fill")
-                        .foregroundColor(viewModel.isOpenRouterConfigured ? .green : .red)
-                        .font(.caption)
-
-                    if viewModel.isOpenRouterConfigured {
-                        Text("Connected")
-                            .foregroundColor(.secondary)
-                        if let credits = viewModel.openRouterCredits {
-                            Text("• $\(credits, specifier: "%.2f") remaining")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
-                        }
-                    } else {
-                        Text("Not configured")
-                            .foregroundColor(.secondary)
-                    }
-
-                    Spacer()
-                }
-
-                if viewModel.isOpenRouterConfigured {
-                    Button("Remove API Key") {
-                        Task { await viewModel.removeAPIKey() }
-                    }
-                    .foregroundColor(.red)
-                } else {
-                    SecureField("API Key", text: $viewModel.apiKeyInput)
-                        .textFieldStyle(.roundedBorder)
-
-                    Button("Save API Key") {
-                        Task { await viewModel.saveAPIKey() }
-                    }
-                    .disabled(viewModel.apiKeyInput.isEmpty || viewModel.isSaving)
-                }
-
-                Link("Get API key from OpenRouter",
-                     destination: URL(string: "https://openrouter.ai/keys")!)
-                    .font(.caption)
-            }
-
-            // Default Model Section
-            Section("Default AI Model") {
-                Picker("Model", selection: $viewModel.selectedModel) {
-                    ForEach(OpenRouterModel.allCases, id: \.self) { model in
+        ScrollView {
+            VStack(spacing: 12) {
+                // OpenRouter API status (always visible)
+                GroupBox("OpenRouter API") {
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text(model.displayName)
-                            if model.isFree {
-                                Text("FREE")
-                                    .font(.caption2)
-                                    .foregroundColor(.green)
+                            Image(systemName: "circle.fill")
+                                .foregroundColor(viewModel.isOpenRouterConfigured ? .green : .red)
+                                .font(.caption)
+
+                            if viewModel.isOpenRouterConfigured {
+                                Text("Connected")
+                                    .foregroundColor(.secondary)
+                                if let credits = viewModel.openRouterCredits {
+                                    Text("• $\(credits, specifier: "%.2f") remaining")
+                                        .foregroundColor(.secondary)
+                                        .font(.caption)
+                                }
+                            } else {
+                                Text("Not configured")
+                                    .foregroundColor(.secondary)
+                            }
+
+                            Spacer()
+                        }
+
+                        if viewModel.isOpenRouterConfigured {
+                            Button("Remove API Key") {
+                                Task { await viewModel.removeAPIKey() }
+                            }
+                            .foregroundColor(.red)
+                        } else {
+                            HStack {
+                                SecureField("API Key", text: $viewModel.apiKeyInput)
+                                    .textFieldStyle(.roundedBorder)
+
+                                Button("Save") {
+                                    Task { await viewModel.saveAPIKey() }
+                                }
+                                .disabled(viewModel.apiKeyInput.isEmpty || viewModel.isSaving)
                             }
                         }
-                        .tag(model)
+
+                        Link("Get API key from OpenRouter",
+                             destination: URL(string: "https://openrouter.ai/keys")!)
+                            .font(.caption)
                     }
                 }
 
-                if viewModel.selectedModel.isFree {
-                    Text("Free tier - no cost")
-                        .font(.caption)
-                        .foregroundColor(.green)
-                } else {
-                    Text("~$\(viewModel.selectedModel.inputCostPerMillion, specifier: "%.2f")/$\(viewModel.selectedModel.outputCostPerMillion, specifier: "%.2f") per 1M tokens (in/out)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                // AI Models accordion (per-feature selection)
+                DisclosureGroup("AI Models", isExpanded: $isModelsExpanded) {
+                    ModelSelectionSection()
+                        .padding(.top, 8)
                 }
 
-                Text("Used for briefings, priority analysis, and progress tracking")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            // Database Section
-            Section("Database (PostgreSQL)") {
-                HStack {
-                    Image(systemName: "circle.fill")
-                        .foregroundColor(viewModel.isDatabaseConnected ? .green : .red)
-                        .font(.caption)
-
-                    Text(viewModel.isDatabaseConnected ? "Connected" : "Not connected")
-                        .foregroundColor(.secondary)
-
-                    Spacer()
-
-                    if !viewModel.isDatabaseConnected {
-                        Button("Retry") {
-                            Task { await viewModel.reconnectDatabase() }
-                        }
-                        .controlSize(.small)
-                    }
+                // Refresh Intervals accordion
+                DisclosureGroup("Refresh Intervals", isExpanded: $isRefreshExpanded) {
+                    RefreshIntervalsSection()
+                        .padding(.top, 8)
                 }
 
-                if !viewModel.isDatabaseConnected {
-                    Text("Start PostgreSQL with: cd ~/Projects/dev-stacks && docker-compose up -d")
-                        .font(.caption)
-                        .foregroundColor(.orange)
+                // Ollama accordion
+                DisclosureGroup("Ollama (Embeddings)", isExpanded: $isOllamaExpanded) {
+                    OllamaSection()
+                        .padding(.top, 8)
                 }
-            }
 
-            // Ollama Section
-            Section("Ollama (Local LLM)") {
-                HStack {
-                    Image(systemName: "circle.fill")
-                        .foregroundColor(viewModel.isOllamaAvailable ? .green : .yellow)
-                        .font(.caption)
-
-                    if viewModel.isOllamaAvailable {
-                        Text("Running")
-                            .foregroundColor(.secondary)
-                        if let version = viewModel.ollamaVersion {
-                            Text("• v\(version)")
-                                .foregroundColor(.secondary)
+                // Database & Services accordion
+                DisclosureGroup("Database & Services", isExpanded: $isServicesExpanded) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        // Database status
+                        HStack {
+                            Image(systemName: "circle.fill")
+                                .foregroundColor(viewModel.isDatabaseConnected ? .green : .red)
                                 .font(.caption)
+
+                            Text("Database")
+                                .font(.subheadline)
+
+                            Spacer()
+
+                            Text(viewModel.isDatabaseConnected ? "Connected" : "Not connected")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            if !viewModel.isDatabaseConnected {
+                                Button("Retry") {
+                                    Task { await viewModel.reconnectDatabase() }
+                                }
+                                .controlSize(.small)
+                            }
                         }
-                    } else {
-                        Text("Not running (optional)")
-                            .foregroundColor(.secondary)
+
+                        if !viewModel.isDatabaseConnected {
+                            Text("Start PostgreSQL with: cd ~/Projects/dev-stacks && docker-compose up -d")
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+
+                        Divider()
+
+                        // Ollama status (brief - detailed config in OllamaSection)
+                        HStack {
+                            Image(systemName: "circle.fill")
+                                .foregroundColor(viewModel.isOllamaAvailable ? .green : .yellow)
+                                .font(.caption)
+
+                            Text("Ollama")
+                                .font(.subheadline)
+
+                            Spacer()
+
+                            if viewModel.isOllamaAvailable {
+                                Text("Running")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                if let version = viewModel.ollamaVersion {
+                                    Text("v\(version)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            } else {
+                                Text("Not running (optional)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
-
-                    Spacer()
+                    .padding(.top, 8)
                 }
 
-                if !viewModel.isOllamaAvailable {
-                    Text("Ollama is optional - used for local embeddings")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            // Status Section
-            if let error = viewModel.error {
-                Section {
+                // Error display
+                if let error = viewModel.error {
                     Text(error)
                         .foregroundColor(.red)
                         .font(.caption)
                 }
             }
+            .padding()
         }
-        .formStyle(.grouped)
-        .padding()
         .onAppear {
             Task { await viewModel.refresh() }
         }
@@ -373,15 +377,10 @@ class AIServicesSettingsViewModel: ObservableObject {
     @Published var isSaving = false
     @Published var error: String?
 
-    /// Selected default model - syncs to all AI settings
-    @Published var selectedModel: OpenRouterModel = .gemma2Free {
-        didSet {
-            // Sync to all settings
-            BriefingSettings.shared.selectedModel = selectedModel
-            PrioritySettings.shared.selectedModel = selectedModel
-            ProgressSettings.shared.selectedModel = selectedModel
-        }
-    }
+    // Per-feature model selection - each feature now has its own model picker
+    // See ModelSelectionSection for individual controls
+    // This property is kept for backwards compatibility but no longer syncs globally
+    @Published var selectedModel: OpenRouterModel = .gemma2Free
 
     func refresh() async {
         let aiManager = AIManager.shared
@@ -391,8 +390,8 @@ class AIServicesSettingsViewModel: ObservableObject {
         ollamaVersion = aiManager.ollamaVersion
         isDatabaseConnected = await aiManager.isDatabaseConnected
 
-        // Load current model from briefing settings (they should be in sync)
-        selectedModel = BriefingSettings.shared.selectedModel
+        // REMOVED: selectedModel = BriefingSettings.shared.selectedModel
+        // Models are now configured per-feature in ModelSelectionSection
     }
 
     func saveAPIKey() async {
