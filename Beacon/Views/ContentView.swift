@@ -464,15 +464,10 @@ class AIServicesInlineViewModel: ObservableObject {
     @Published var isSaving = false
     @Published var error: String?
 
-    /// Selected default model - syncs to all AI settings
-    @Published var selectedModel: OpenRouterModel = .gemma2Free {
-        didSet {
-            // Sync to all settings
-            BriefingSettings.shared.selectedModel = selectedModel
-            PrioritySettings.shared.selectedModel = selectedModel
-            ProgressSettings.shared.selectedModel = selectedModel
-        }
-    }
+    // Per-feature model selection - each feature now has its own model picker
+    // See ModelSelectionSection for individual controls
+    // This property is kept for backwards compatibility but no longer syncs globally
+    @Published var selectedModel: OpenRouterModel = .gemma2Free
 
     func refresh() async {
         let aiManager = AIManager.shared
@@ -482,8 +477,8 @@ class AIServicesInlineViewModel: ObservableObject {
         ollamaVersion = aiManager.ollamaVersion
         isDatabaseConnected = await aiManager.isDatabaseConnected
 
-        // Load current model from briefing settings
-        selectedModel = BriefingSettings.shared.selectedModel
+        // REMOVED: selectedModel = BriefingSettings.shared.selectedModel
+        // Models are now configured per-feature in ModelSelectionSection
     }
 
     func saveAPIKey() async {
